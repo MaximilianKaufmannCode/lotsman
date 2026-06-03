@@ -6,13 +6,11 @@
 
 ![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg) ![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg) ![React 19](https://img.shields.io/badge/React-19-61dafb.svg) ![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-336791.svg) ![self-hosted](https://img.shields.io/badge/self--hosted-on--premise-2D3F50.svg)
 
+![Лоцман — главный экран: реестр документов с цветными маркерами сроков, фильтрами по колонкам и экспортом в Excel](docs/assets/lotsman-registry.png)
+
 </div>
 
 > 🇬🇧 **English (TL;DR).** Лоцман ("Lotsman") is a **self-hosted** registry for partner-company documents (contracts, licenses, audit reports) that **tracks renewal deadlines and reminds the right people automatically** — via Email, Telegram, and Dion. It replaces a fragile shared Excel file with a multi-user, **fully audited**, **MFA-protected** app that runs entirely on your own server. The UI and user guide are in Russian. Licensed under **MPL-2.0**.
-
-<!-- Скриншот реестра появится здесь. Добавьте файл docs/assets/lotsman-registry.png и раскомментируйте строку ниже:
-![Лоцман — реестр документов с цветными маркерами сроков](docs/assets/lotsman-registry.png)
--->
 
 ---
 

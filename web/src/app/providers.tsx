@@ -14,7 +14,11 @@ import { registerColumnLabelsTokenAccessor } from "@/features/registry/columnLab
 import { registerColumnOrderTokenAccessor } from "@/features/registry/columnOrderApi";
 import { registerSystemTokenAccessor } from "@/features/system/api";
 import { registerClientTokenAccessor } from "@/shared/api/client";
-import { handle401, registerInterceptorCallbacks } from "@/shared/api/interceptor";
+import {
+  handle401,
+  registerInterceptorCallbacks,
+  registerInterceptorTokenGetter,
+} from "@/shared/api/interceptor";
 
 // ── QueryClient with global 401 handling ──────────────────────────────────────
 
@@ -24,8 +28,11 @@ function makeQueryClient(): QueryClient {
       queries: {
         staleTime: 30_000,
         retry: (failureCount, error) => {
-          // Don't retry on 401 — interceptor will handle redirect
-          if (error instanceof Error && error.message.includes("401")) return false;
+          // The fetch layer already refreshes + retries once per request, so a
+          // surviving 401/403 means the session is dead — don't retry (terminal
+          // handling happens in the cache onError below).
+          const status = (error as { status?: number } | null)?.status;
+          if (status === 401 || status === 403) return false;
           return failureCount < 1;
         },
       },
@@ -60,6 +67,7 @@ function InterceptorWiring() {
     registerAuthTokenAccessor(getToken);
     registerRegistryTokenAccessor(getToken);
     registerClientTokenAccessor(getToken);
+    registerInterceptorTokenGetter(getToken);
     registerChannelTokenAccessor(getToken);
     registerCalendarSubscriptionTokenAccessor(getToken);
     registerSystemTokenAccessor(getToken);
@@ -91,16 +99,17 @@ export function Providers({ children }: ProvidersProps) {
 
   // Wire global 401 handling into TanStack Query
   React.useEffect(() => {
+    // Terminal auth handling. The fetch layer already attempts one refresh+retry
+    // per request, so reaching here with a 401 means recovery failed — hand off
+    // to handle401 (refresh once more, or hard-logout + redirect to /login).
+    const is401 = (error: unknown): boolean =>
+      (error as { status?: number } | null)?.status === 401 ||
+      (error instanceof Error && error.message.includes("401"));
     queryClient.getQueryCache().config.onError = async (error) => {
-      if (error instanceof Error && error.message === "401") {
-        await handle401(false);
-        queryClient.invalidateQueries();
-      }
+      if (is401(error)) await handle401(false);
     };
     queryClient.getMutationCache().config.onError = async (error) => {
-      if (error instanceof Error && error.message === "401") {
-        await handle401(false);
-      }
+      if (is401(error)) await handle401(false);
     };
   }, [queryClient]);
 

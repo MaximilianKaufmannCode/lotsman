@@ -31,6 +31,7 @@ import type {
   UserProfile,
   UserRole,
 } from "./types";
+import { recoverFrom401 } from "@/shared/api/interceptor";
 
 const BASE = (import.meta.env.VITE_API_BASE_URL ?? "/api") as string;
 
@@ -85,7 +86,21 @@ export async function apiFetch<T>(path: string, opts: FetchOptions = {}): Promis
     fetchInit.body = JSON.stringify(body);
   }
 
-  const res = await fetch(`${BASE}${path}`, fetchInit);
+  let res = await fetch(`${BASE}${path}`, fetchInit);
+
+  // Transparent recovery from an expired access token (ADR-0003 §7): on a 401
+  // for an authenticated call, refresh once and retry. The body is a serialized
+  // string, so re-sending `fetchInit` is safe for any method — and a 401 is
+  // rejected pre-handler, so there is no double-execution risk. Anonymous routes
+  // (login / TOTP / refresh) carry no bearer and must never trigger a loop.
+  if (res.status === 401 && auth && path !== "/v1/auth/refresh") {
+    const sentToken = _getToken?.() ?? null;
+    const newToken = await recoverFrom401(sentToken);
+    if (newToken) {
+      headers.Authorization = `Bearer ${newToken}`;
+      res = await fetch(`${BASE}${path}`, fetchInit);
+    }
+  }
 
   if (!res.ok) {
     let detail = "Неизвестная ошибка";

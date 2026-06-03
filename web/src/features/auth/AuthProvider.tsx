@@ -15,6 +15,8 @@
 import * as React from "react";
 import { ApiResponseError, logout as apiLogout, refreshToken, registerTokenAccessor } from "./api";
 import { BroadcastCoordinator, TAB_ID } from "./broadcast";
+import { REFRESH_BEFORE_EXPIRY_MS } from "./constants";
+import { RefreshScheduler } from "./refreshScheduler";
 import type {
   AuthStatus,
   BackupCodeVerifyResponse,
@@ -125,6 +127,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // BroadcastChannel coordinator — created once per tab
   const coordinatorRef = React.useRef<BroadcastCoordinator | null>(null);
 
+  // Access-token expiry (ms) — drives the proactive scheduler + wake-up checks.
+  const expiresAtRef = React.useRef<number | null>(null);
+  // Proactive refresh scheduler (refreshes ~1 min before expiry).
+  const schedulerRef = React.useRef<RefreshScheduler | null>(null);
+  // Coalesces concurrent refreshes into a single in-flight network call.
+  const refreshInFlightRef = React.useRef<Promise<string | null> | null>(null);
+  // Stable ref to the latest refresh() — for once-registered listeners/scheduler.
+  const refreshRef = React.useRef<() => Promise<string | null>>(() => Promise.resolve(null));
+  // Stable ref to the latest status — read inside once-registered listeners.
+  const statusRef = React.useRef<AuthStatus>("unknown");
+  statusRef.current = state.status;
+
   // Stable helpers via ref to avoid exhaustive-deps issues
   const applyToken = React.useCallback((token: string): void => {
     const decoded = decodeJwtClaims(token);
@@ -137,15 +151,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // the Authorization header for the three enrollment routes. The caller
       // sets status (typically "first-login-required") separately.
       tokenRef.current = token;
+      expiresAtRef.current = null;
       dispatch({ type: "APPLY_OPAQUE_TOKEN", token });
       return;
     }
     tokenRef.current = token;
+    expiresAtRef.current = decoded.exp ? decoded.exp * 1000 : null;
     dispatch({ type: "APPLY_TOKEN", token, claims: decoded });
   }, []);
 
   const clearToken = React.useCallback((newStatus: AuthStatus = "unauthenticated"): void => {
     tokenRef.current = null;
+    expiresAtRef.current = null;
+    schedulerRef.current?.cancel();
     dispatch({ type: "CLEAR_TOKEN", status: newStatus });
   }, []);
 
@@ -183,6 +201,51 @@ export function AuthProvider({ children }: AuthProviderProps) {
         clearToken();
       });
   }, [applyToken, clearToken]);
+
+  // ── Proactive refresh scheduler (created once) ───────────────────────────────
+  React.useEffect(() => {
+    const scheduler = new RefreshScheduler({
+      getExpiresAt: () => expiresAtRef.current,
+      doRefresh: () => refreshRef.current(),
+    });
+    schedulerRef.current = scheduler;
+    return () => {
+      scheduler.cancel();
+      schedulerRef.current = null;
+    };
+  }, []);
+
+  // (Re)arm the scheduler whenever a new access token is applied; cancel on logout.
+  React.useEffect(() => {
+    if (state.status === "authenticated" && expiresAtRef.current) {
+      schedulerRef.current?.schedule();
+    } else {
+      schedulerRef.current?.cancel();
+    }
+  }, [state.status, state.accessToken]);
+
+  // Recover after the tab wakes from background/sleep: setTimeout is throttled or
+  // suspended while hidden, so the access token may have silently expired.
+  React.useEffect(() => {
+    const refreshIfStale = (): void => {
+      if (statusRef.current !== "authenticated") return;
+      const exp = expiresAtRef.current;
+      if (exp && Date.now() >= exp - REFRESH_BEFORE_EXPIRY_MS) {
+        void refreshRef.current();
+      }
+      // Re-arm — the timer may have drifted while the tab was hidden.
+      schedulerRef.current?.schedule();
+    };
+    const onVisibility = (): void => {
+      if (document.visibilityState === "visible") refreshIfStale();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("online", refreshIfStale);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("online", refreshIfStale);
+    };
+  }, []);
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -251,28 +314,42 @@ export function AuthProvider({ children }: AuthProviderProps) {
   );
 
   const refresh = React.useCallback(async (): Promise<string | null> => {
-    try {
-      const isLeader = await coordinatorRef.current?.electLeader();
-      if (!isLeader) {
-        // Another tab will broadcast the new token
+    // Coalesce concurrent callers (the registry page fires several queries at
+    // once; the scheduler and wake-up handlers may also fire) into ONE refresh.
+    if (refreshInFlightRef.current) return refreshInFlightRef.current;
+    const inFlight = (async (): Promise<string | null> => {
+      try {
+        const isLeader = await coordinatorRef.current?.electLeader();
+        if (!isLeader) {
+          // Another tab is the leader and will broadcast the new token.
+          return null;
+        }
+        const res = await refreshToken();
+        applyToken(res.access_token);
+        const expClaims = decodeJwtClaims(res.access_token);
+        coordinatorRef.current?.broadcastTokenRefreshed(
+          res.access_token,
+          (expClaims?.exp ?? 0) * 1000,
+        );
+        return res.access_token;
+      } catch (err) {
+        if (err instanceof ApiResponseError && err.status === 401) {
+          clearToken();
+          coordinatorRef.current?.broadcastLoggedOut();
+        }
         return null;
       }
-      const res = await refreshToken();
-      applyToken(res.access_token);
-      const expClaims = decodeJwtClaims(res.access_token);
-      coordinatorRef.current?.broadcastTokenRefreshed(
-        res.access_token,
-        (expClaims?.exp ?? 0) * 1000,
-      );
-      return res.access_token;
-    } catch (err) {
-      if (err instanceof ApiResponseError && err.status === 401) {
-        clearToken();
-        coordinatorRef.current?.broadcastLoggedOut();
-      }
-      return null;
+    })();
+    refreshInFlightRef.current = inFlight;
+    try {
+      return await inFlight;
+    } finally {
+      refreshInFlightRef.current = null;
     }
   }, [applyToken, clearToken]);
+
+  // Keep a stable ref so once-registered listeners/scheduler call the latest fn.
+  refreshRef.current = refresh;
 
   const logout = React.useCallback(async (): Promise<void> => {
     try {

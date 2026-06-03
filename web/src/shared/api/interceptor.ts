@@ -32,6 +32,50 @@ export function registerInterceptorCallbacks(opts: {
   _navigateToLogin = opts.navigateToLogin;
 }
 
+/**
+ * Current-access-token getter — registered by AuthProvider. Used to pick up the
+ * post-refresh token in the multi-tab follower case (where this tab did not run
+ * the refresh itself but receives the new token via BroadcastChannel).
+ */
+let _getCurrentToken: (() => string | null) | null = null;
+
+export function registerInterceptorTokenGetter(fn: () => string | null): void {
+  _getCurrentToken = fn;
+}
+
+/**
+ * Recover from a 401 caused by an expired access token: refresh exactly once and
+ * return a fresh token to retry the original request with (or null if the
+ * session is truly dead and cannot be recovered).
+ *
+ * - Leader tab: `_refresh()` returns the new token (AuthProvider applies it to
+ *   the token ref synchronously), so we return it directly.
+ * - Follower tab: `_refresh()` returns null because another tab is the elected
+ *   leader; we wait (bounded) for that tab's BroadcastChannel message to deliver
+ *   the new token into the accessor, then return it.
+ *
+ * `_refresh` is coalesced inside AuthProvider, so concurrent callers (the
+ * registry page fires several queries at once) trigger only ONE network refresh.
+ */
+export async function recoverFrom401(sentToken: string | null): Promise<string | null> {
+  let refreshed: string | null = null;
+  try {
+    refreshed = (await _refresh?.()) ?? null;
+  } catch {
+    refreshed = null;
+  }
+  if (refreshed && refreshed !== sentToken) return refreshed;
+
+  // Follower path: await the leader tab's broadcast (bounded to ~1.5s).
+  const deadlineMs = Date.now() + 1500;
+  while (Date.now() < deadlineMs) {
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    const current = _getCurrentToken?.() ?? null;
+    if (current && current !== sentToken) return current;
+  }
+  return null;
+}
+
 /** Whether a 401 retry is currently in flight (prevents nested retries). */
 let _refreshInFlight = false;
 

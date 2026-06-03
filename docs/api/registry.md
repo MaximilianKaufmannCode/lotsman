@@ -271,8 +271,6 @@ Soft-delete (archive) a document. Sets `deleted_at` to now.
 
 **Roles:** editor, admin
 
-**Note — SPA/BFF contract gap:** The SPA (`api.ts` `archiveDocument`) calls `PATCH /api/v1/documents/{id}/archive`, but the BFF proxy and registry-service implement archive as `DELETE /api/v1/documents/{id}`. The BFF routes `DELETE /documents/{document_id}` to this endpoint. **Verify with frontend whether `api.ts` uses the correct method or whether the BFF has a `PATCH .../archive` alias.** Flag: **TBD.**
-
 **Response 200:**
 
 ```json
@@ -620,7 +618,7 @@ The BFF validates the Content-Length before forwarding (defense-in-depth). `regi
 
 **Audit event emitted:** `registry.document.updated.v1` with `actor_id` of the uploader.
 
-**Note — SPA contract gap:** `api.ts` calls `GET /api/v1/documents/{documentId}/attachments` (listAttachments), but neither the BFF nor `registry-service` exposes a dedicated `GET /documents/{id}/attachments` list endpoint — the attachment list is returned inline in `GET /documents/{id}`. **TBD: verify with frontend whether `listAttachments` is used or if it has been superseded by the detail endpoint.**
+**Note:** The attachment list is returned inline in `GET /documents/{id}`; there is no separate attachments-list endpoint.
 
 **Related stories:** US-9
 
@@ -674,8 +672,6 @@ Hard-delete an attachment. The file is removed from disk; the `registry.attachme
 Request an asynchronous `.xlsx` export. The export captures a snapshot of the registry **at job start time** (not when the POST was received, but when the ARQ worker begins executing). This is per acceptance decision Q2 in requirements/registry-crud.md.
 
 **Roles:** viewer, editor, admin
-
-**Note — SPA contract gap:** `api.ts` sends the POST to `/api/v1/exports/xlsx`, but the BFF and registry-service expose the endpoint at `POST /api/v1/exports` (no `/xlsx` suffix). **TBD: verify with frontend and backend which path is canonical.**
 
 **Request body:**
 

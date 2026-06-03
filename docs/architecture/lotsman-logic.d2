@@ -111,7 +111,7 @@ HOST: "🖥️  on-premise host  ·  Docker Compose" {
     BFF: "web-bff  ·  :8000" {
       class: bff
       width: 240; height: 70
-      tooltip: "FastAPI · проверяет внешний RS256 access JWT · минтит internal JWT (HS256, 60s, audience-bound) per downstream · InboundHeaderSanitiser (закрывает F-008) · фан-аут к 4 backend-сервисам · НЕ содержит бизнес-логики"
+      tooltip: "FastAPI · проверяет внешний RS256 access JWT · минтит internal JWT (HS256, 60s, audience-bound) per downstream · InboundHeaderSanitiser (закрывает F-008) · фан-аут к 5 backend-сервисам (incl. system-control sidecar) · НЕ содержит бизнес-логики"
     }
   }
 
@@ -140,6 +140,11 @@ HOST: "🖥️  on-premise host  ·  Docker Compose" {
       width: 220; height: 60
       tooltip: "Append-only consumer всех `*.v1` Redis Streams (consumer group `audit-recorder`) · пишет в audit.events (RANGE-partition по месяцу) · read-only API «история изменений» · единственный сервис с REVOKE UPDATE/DELETE на свою роль"
     }
+    SYSTEM: "system-control  ·  sidecar" {
+      class: svc
+      width: 220; height: 60
+      tooltip: "Privileged-ops сайдкар (ADR-0009) · рестарт/health контейнеров через docker-socket-proxy (allow-list, не прямой docker.sock) · без БД · вызывается super-admin через BFF /system/* · internal JWT aud=system-control"
+    }
   }
 
   # ── Data tier ─────────────────────────────────────────────────────
@@ -163,6 +168,13 @@ HOST: "🖥️  on-premise host  ·  Docker Compose" {
       tooltip: "/vol/attachments/{YYYY}/{MM}/{uuid}.{ext} (≤25 MiB, MIME-allowlist, signed URL TTL <60s) и /vol/exports/{job_id}.xlsx (TTL 24h, hourly cron purge)"
     }
   }
+
+  # ── Control-plane socket proxy (для system-control) ───────────────
+  SOCK: "docker-socket-proxy" {
+    class: vol
+    width: 200; height: 50
+    tooltip: "Tecnativa docker-socket-proxy · read-mostly allow-list к Docker/Podman API (containers: restart/inspect) · снижает blast-radius прямого docker.sock (ADR-0009)"
+  }
 }
 
 # ══════════════════════════════════════════════════════════════════════
@@ -179,11 +191,15 @@ HOST.EDGE_TIER.NGINX -> HOST.BFF_TIER.BFF:   "/api/* proxy" {class: proxy}
 # ── SPA → BFF ─────────────────────────────────────────────────────────
 HOST.FRONT_TIER.WEB -> HOST.BFF_TIER.BFF: "Bearer access JWT" {class: ui-req}
 
-# ── BFF → 4 backend (звёздная топология; ADR-0002 §B) ─────────────────
+# ── BFF → 5 backend (звёздная топология; ADR-0002 §B + ADR-0009) ──────
 HOST.BFF_TIER.BFF -> HOST.BACKEND.AUTH:     "internal JWT\naud=auth-service" {class: internal-rpc}
 HOST.BFF_TIER.BFF -> HOST.BACKEND.REGISTRY: "internal JWT\naud=registry-service" {class: internal-rpc}
 HOST.BFF_TIER.BFF -> HOST.BACKEND.NOTIFY:   "internal JWT\naud=notification-service" {class: internal-rpc}
 HOST.BFF_TIER.BFF -> HOST.BACKEND.AUDIT:    "internal JWT\naud=audit-service\n(read-only история)" {class: internal-rpc}
+HOST.BFF_TIER.BFF -> HOST.BACKEND.SYSTEM:   "internal JWT\naud=system-control\n(/system/* super-admin)" {class: internal-rpc}
+
+# ── system-control → container socket (privileged ops; ADR-0009) ──────
+HOST.BACKEND.SYSTEM -> HOST.SOCK: "container ops\nrestart / health" {class: proxy}
 
 # ── BFF → Redis (короткие session-ключи + replay cache) ───────────────
 HOST.BFF_TIER.BFF -> HOST.DATA.REDIS: "session keys" {class: cache-io}

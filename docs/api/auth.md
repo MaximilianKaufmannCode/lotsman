@@ -408,7 +408,7 @@ Requires `Authorization: Bearer`.
 ]
 ```
 
-`is_current` flags the session corresponding to the Bearer token used in this request. **Note**: `is_current` is a placeholder (`false`) in the current implementation because `sid` is not yet propagated through the internal JWT. **TBD: verify with backend** when `sid` is added to the internal JWT claims.
+`is_current` flags the session corresponding to the Bearer token used in this request. **Note**: `is_current` is currently always `false` because `sid` is not yet propagated through the internal JWT.
 
 **Related**: US-11.
 
@@ -604,8 +604,6 @@ or
 
 **Error**: `400` if neither `role` nor `active` is present in the body.
 
-**Note**: The SPA `api.ts` uses separate function calls — `adminChangeRole` (`PATCH /api/v1/admin/users/{id}/role`) and `adminDeactivateUser` (`POST /api/v1/admin/users/{id}/deactivate`) — which map through this single BFF `PATCH` handler. **TBD: verify with frontend** that the `re_mfa_token` field routing is consistent; the BFF currently checks the upstream Redis flag rather than reading `re_mfa_token` from the request body.
-
 **Related**: US-18, US-19. **Audit events**: `auth.user.role_changed.v1`, `auth.user.deactivated.v1`.
 
 ---
@@ -702,19 +700,6 @@ Generates a new OOB OTP for a target user, sets `must_change_at_next_login=true`
 The admin relays the OTP to the user out-of-band. After logging in with the OTP, the user can only call `POST /api/v1/auth/password/change` — all other endpoints return `403 WWW-Authenticate: must_change_password` until the change is completed.
 
 **Related**: US-20. **Audit event**: `auth.user.password_reset.v1`.
-
----
-
-## Doc gaps
-
-The following items were found in the code but are not fully confirmed by the SPA contract or tests. They are flagged for follow-up with the implementing agent.
-
-| Gap | Location | Notes |
-|---|---|---|
-| `is_current` in `SessionResponse` | `auth-service/api/v1/auth.py:491` | Always `false` — `sid` not yet in internal JWT claims |
-| `re_mfa_token` routing in admin PATCH | `web-bff/api/v1/admin.py:134-176` | BFF fans out to role-change and deactivate; re-MFA enforced via Redis flag, not the token value |
-| SPA uses `/v1/admin/users/{id}/lock` | `web/src/features/auth/api.ts:321` | BFF route is `POST /admin/users/{id}/lockout`; **TBD: verify with frontend** whether the SPA path matches |
-| `DELETE /api/v1/admin/users/{user_id}/sessions/{session_id}` | `auth-service/api/v1/admin.py:446` | Route exists in auth-service; no corresponding BFF or SPA function found |
 
 ---
 

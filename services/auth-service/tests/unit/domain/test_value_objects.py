@@ -86,7 +86,7 @@ def test_property_generate_round_trip_always_valid(raw_bytes: bytes) -> None:
 
 
 def test_valid_email_accepted() -> None:
-    e = Email(value="Alice@Corp.Local")
+    e = Email(value="Alice@Example.com")
     assert e.value == "alice@example.com"
 
 

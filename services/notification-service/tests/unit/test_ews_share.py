@@ -198,7 +198,7 @@ class TestGrantCalendarShare:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Email matching is case-insensitive."""
-        existing = [_make_perm("Alice@Corp.Local")]
+        existing = [_make_perm("Alice@Example.com")]
         fake = self._patch_exchangelib(monkeypatch, existing_perms=existing)
         from notification_service.infrastructure.calendar.ews_share import grant_calendar_share
 

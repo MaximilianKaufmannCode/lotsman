@@ -1,0 +1,114 @@
+# Лоцман — observability overlay
+# Usage:
+#   make obs-up   →  docker compose -f infra/compose.dev.yml -f infra/compose.observability.yml up -d
+#   make obs-down →  docker compose -f infra/compose.dev.yml -f infra/compose.observability.yml down
+#
+# This file is a Compose overlay: it adds Prometheus, Grafana, Loki, and Promtail
+# to the dev (or prod) stack. It shares the lotsman-internal network so Prometheus
+# can scrape the backend services' /metrics endpoints.
+#
+# Ports exposed on loopback only:
+#   Prometheus: 9090
+#   Grafana:    3000
+#   Loki:       3100  (internal only; Promtail pushes to it, not exposed to host)
+
+name: lotsman
+
+networks:
+  lotsman-internal:
+    external: true
+
+volumes:
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  loki-data:
+    driver: local
+
+services:
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: lotsman_prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - lotsman-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: lotsman_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-changeme}
+      GF_SECURITY_ADMIN_USER: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: http://localhost:3000
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - lotsman-internal
+    depends_on:
+      - prometheus
+      - loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: lotsman_loki
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    # Loki is not exposed to the host; Promtail pushes to it over the internal network
+    networks:
+      - lotsman-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    container_name: lotsman_promtail
+    restart: unless-stopped
+    command: ["-config.file=/etc/promtail/promtail-config.yml"]
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      # Docker socket for log scraping — read-only
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - lotsman-internal
+    depends_on:
+      loki:
+        condition: service_healthy

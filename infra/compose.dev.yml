@@ -1,0 +1,507 @@
+# Лоцман — development stack
+# Usage: docker compose -f infra/compose.dev.yml up -d
+# Single command: make dev  (runs compose up + migrate + seed)
+#
+# Network topology (per ADR-0002 §ops handoff):
+#   lotsman-edge:     nginx <-> web-bff
+#   lotsman-internal: web-bff <-> backend services, all services <-> postgres, redis
+#
+# Service roles mapped to per-service Postgres roles (created by 01-schemas-and-roles.sql).
+# Passwords for those roles are injected via AUTH_PG_PASSWORD / REGISTRY_PG_PASSWORD /
+# NOTIFICATION_PG_PASSWORD / AUDIT_PG_PASSWORD env vars read from .env.
+
+name: lotsman
+
+networks:
+  lotsman-edge:
+    driver: bridge
+  lotsman-internal:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  attachments-data:
+    driver: local
+  exports-data:
+    driver: local
+
+services:
+
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    container_name: lotsman_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: lotsman
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data:U
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - lotsman-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lotsman"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: docker.io/library/redis:7-alpine
+    container_name: lotsman_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy noeviction
+    volumes:
+      - redis-data:/data:U
+    ports:
+      - "127.0.0.1:6379:6379"
+    networks:
+      - lotsman-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  mailpit:
+    # Modern Mailhog replacement — SMTP on 1025, web UI on 8025
+    image: docker.io/axllent/mailpit:latest
+    container_name: lotsman_mailpit
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    networks:
+      - lotsman-internal
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+
+  # ── Backend services ─────────────────────────────────────────────────────────
+  #
+  # All five services are built from the repo root context so multistage
+  # Dockerfiles can COPY shared/ alongside each service's source.
+  # Port mapping (host:container):
+  #   auth-svc         → 8001:8000
+  #   registry-svc     → 8002:8000
+  #   notification-svc → 8003:8000
+  #   audit-svc        → 8004:8000
+  #   web-bff          → 8000:8000  (primary entry for SPA and browser)
+  #
+  # Security: all backend containers run as uid 1001 (non-root).
+  # Network membership restricts forbidden edges from ADR-0002 §B:
+  #   - notification-svc is NOT on lotsman-edge
+  #   - audit-svc is NOT on lotsman-edge
+  # NOTE: Compose L4 filtering is not enforced between containers on the same
+  # network; import-linter + code review enforce the ADR-0002 call graph.
+
+  auth-svc:
+    build:
+      context: ..
+      dockerfile: services/auth-service/Dockerfile
+    container_name: lotsman_auth_svc
+    restart: unless-stopped
+    user: "1001:1001"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: ${AUTH_DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      SERVICE_NAME: auth-service
+      # Per-service internal JWT key (ADR-0003 §10 / F-001)
+      INTERNAL_JWT_KEY_AUTH: ${INTERNAL_JWT_KEY_AUTH}
+      # TOTP secret encryption key (Fernet; ADR-0003 §6)
+      TOTP_ENC_KEY: ${TOTP_ENC_KEY}
+      # RS256 access JWT signing key paths (ADR-0003 §7)
+      JWT_PRIVATE_KEY_PATH: /run/secrets/jwt-private.pem
+      JWT_PUBLIC_KEY_PATH: /run/secrets/jwt-public.pem
+      # Token TTL (ADR-0003 §7, §8 amended 2026-05-12)
+      ACCESS_TOKEN_TTL_SECONDS: 900
+      REFRESH_TOKEN_TTL_SECONDS: 43200
+      # Refresh-cookie security attributes — dev-friendly defaults (ADR-0003 §9 amended 2026-05-12)
+      REFRESH_COOKIE_SECURE: "false"
+      REFRESH_COOKIE_SAMESITE: lax
+    volumes:
+      - ./secrets-dev/jwt-private.pem:/run/secrets/jwt-private.pem:ro
+      - ./secrets-dev/jwt-public.pem:/run/secrets/jwt-public.pem:ro
+      - ../services/auth-service/src/auth_service:/app/src/auth_service:ro
+      - ../shared/src/lotsman_shared:/app/shared_src/lotsman_shared:ro
+    ports:
+      - "127.0.0.1:8001:8000"
+    networks:
+      - lotsman-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  registry-svc:
+    build:
+      context: ..
+      dockerfile: services/registry-service/Dockerfile
+    container_name: lotsman_registry_svc
+    restart: unless-stopped
+    user: "1001:1001"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: ${REGISTRY_DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      SERVICE_NAME: registry-service
+      INTERNAL_JWT_KEY_REGISTRY: ${INTERNAL_JWT_KEY_REGISTRY}
+      INTERNAL_JWT_KEY_AUDIT: ${INTERNAL_JWT_KEY_AUDIT}
+      LOTSMAN_SIGNED_URL_KEY: ${LOTSMAN_SIGNED_URL_KEY}
+      ATTACHMENTS_VOLUME_ROOT: /vol/attachments
+      EXPORTS_VOLUME_ROOT: /vol/exports
+    volumes:
+      - attachments-data:/vol/attachments:U
+      - exports-data:/vol/exports:U
+      - ../services/registry-service/src/registry_service:/app/src/registry_service:ro
+      - ../shared/src/lotsman_shared:/app/shared_src/lotsman_shared:ro
+    ports:
+      - "127.0.0.1:8002:8000"
+    networks:
+      - lotsman-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  notification-svc:
+    build:
+      context: ..
+      dockerfile: services/notification-service/Dockerfile
+    container_name: lotsman_notification_svc
+    restart: unless-stopped
+    user: "1001:1001"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: ${NOTIFICATION_DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      SERVICE_NAME: notification-service
+      INTERNAL_JWT_KEY_NOTIFICATION: ${INTERNAL_JWT_KEY_NOTIFICATION}
+      INTERNAL_JWT_KEY_REGISTRY: ${INTERNAL_JWT_KEY_REGISTRY}
+      REGISTRY_SVC_URL: http://registry-svc:8000
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      # Channel config encryption key (ADR-0004 §4 / US-16)
+      # Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      CHANNEL_ENC_KEY: ${CHANNEL_ENC_KEY}
+    volumes:
+      - ../services/notification-service/src/notification_service:/app/src/notification_service:ro
+      - ../shared/src/lotsman_shared:/app/shared_src/lotsman_shared:ro
+    ports:
+      - "127.0.0.1:8003:8000"
+    networks:
+      - lotsman-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  registry-arq:
+    build:
+      context: ..
+      dockerfile: services/registry-service/Dockerfile
+    container_name: lotsman_registry_arq
+    restart: unless-stopped
+    user: "1001:1001"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: ${REGISTRY_DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      SERVICE_NAME: registry-arq
+      INTERNAL_JWT_KEY_REGISTRY: ${INTERNAL_JWT_KEY_REGISTRY}
+      INTERNAL_JWT_KEY_AUDIT: ${INTERNAL_JWT_KEY_AUDIT}
+      LOTSMAN_SIGNED_URL_KEY: ${LOTSMAN_SIGNED_URL_KEY}
+      ATTACHMENTS_VOLUME_ROOT: /vol/attachments
+      EXPORTS_VOLUME_ROOT: /vol/exports
+    volumes:
+      - attachments-data:/vol/attachments:U
+      - exports-data:/vol/exports:U
+      - ../services/registry-service/src/registry_service:/app/src/registry_service:ro
+      - ../shared/src/lotsman_shared:/app/shared_src/lotsman_shared:ro
+    networks:
+      - lotsman-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      - arq
+      - registry_service.infrastructure.arq_tasks.WorkerSettings
+
+  notification-arq:
+    build:
+      context: ..
+      dockerfile: services/notification-service/Dockerfile
+    container_name: lotsman_notification_arq
+    restart: unless-stopped
+    user: "1001:1001"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: ${NOTIFICATION_DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      SERVICE_NAME: notification-arq
+      INTERNAL_JWT_KEY_NOTIFICATION: ${INTERNAL_JWT_KEY_NOTIFICATION}
+      INTERNAL_JWT_KEY_REGISTRY: ${INTERNAL_JWT_KEY_REGISTRY}
+      REGISTRY_SVC_URL: http://registry-svc:8000
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      CHANNEL_ENC_KEY: ${CHANNEL_ENC_KEY}
+    volumes:
+      - ../services/notification-service/src/notification_service:/app/src/notification_service:ro
+      - ../shared/src/lotsman_shared:/app/shared_src/lotsman_shared:ro
+    networks:
+      - lotsman-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      - arq
+      - notification_service.infrastructure.arq_tasks.WorkerSettings
+
+  auth-arq:
+    build:
+      context: ..
+      dockerfile: services/auth-service/Dockerfile
+    container_name: lotsman_auth_arq
+    restart: unless-stopped
+    user: "1001:1001"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: ${AUTH_DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      SERVICE_NAME: auth-arq
+      INTERNAL_JWT_KEY_AUTH: ${INTERNAL_JWT_KEY_AUTH}
+      TOTP_ENC_KEY: ${TOTP_ENC_KEY}
+    volumes:
+      - ../services/auth-service/src/auth_service:/app/src/auth_service:ro
+      - ../shared/src/lotsman_shared:/app/shared_src/lotsman_shared:ro
+    networks:
+      - lotsman-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      - arq
+      - auth_service.infrastructure.arq_tasks.WorkerSettings
+
+  audit-svc:
+    build:
+      context: ..
+      dockerfile: services/audit-service/Dockerfile
+    container_name: lotsman_audit_svc
+    restart: unless-stopped
+    user: "1001:1001"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: ${AUDIT_DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      SERVICE_NAME: audit-service
+      INTERNAL_JWT_KEY_AUDIT: ${INTERNAL_JWT_KEY_AUDIT}
+    volumes:
+      - ../services/audit-service/src/audit_service:/app/src/audit_service:ro
+      - ../shared/src/lotsman_shared:/app/shared_src/lotsman_shared:ro
+    ports:
+      - "127.0.0.1:8004:8000"
+    networks:
+      - lotsman-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  web-bff:
+    build:
+      context: ..
+      dockerfile: services/web-bff/Dockerfile
+    container_name: lotsman_web_bff
+    restart: unless-stopped
+    user: "1001:1001"
+    env_file:
+      - ../.env
+    environment:
+      REDIS_URL: ${REDIS_URL}
+      SERVICE_NAME: web-bff
+      # Per-service internal JWT keys (BFF holds all four; ADR-0003 §10 / F-001)
+      # Each must be distinct; uniqueness is asserted at startup (R-5g).
+      INTERNAL_JWT_KEY_AUTH: ${INTERNAL_JWT_KEY_AUTH}
+      INTERNAL_JWT_KEY_REGISTRY: ${INTERNAL_JWT_KEY_REGISTRY}
+      INTERNAL_JWT_KEY_NOTIFICATION: ${INTERNAL_JWT_KEY_NOTIFICATION}
+      INTERNAL_JWT_KEY_AUDIT: ${INTERNAL_JWT_KEY_AUDIT}
+      AUTH_SVC_URL: http://auth-svc:8000
+      REGISTRY_SVC_URL: http://registry-svc:8000
+      NOTIFICATION_SVC_URL: http://notification-svc:8000
+      AUDIT_SVC_URL: http://audit-svc:8000
+      SYSTEM_CONTROL_URL: http://system-control:8000
+      INTERNAL_JWT_KEY_SYSTEM_CONTROL: ${INTERNAL_JWT_KEY_SYSTEM_CONTROL}
+      JWT_PUBLIC_KEY_PATH: /run/secrets/jwt-public.pem
+      # Refresh-cookie attributes — must match auth-svc settings (ADR-0003 §9 amended 2026-05-12)
+      REFRESH_TOKEN_TTL_SECONDS: 43200
+      REFRESH_COOKIE_SECURE: "false"
+      REFRESH_COOKIE_SAMESITE: lax
+    volumes:
+      - ./secrets-dev/jwt-public.pem:/run/secrets/jwt-public.pem:ro
+      - ../services/web-bff/src/web_bff:/app/src/web_bff:ro
+      - ../shared/src/lotsman_shared:/app/shared_src/lotsman_shared:ro
+    networks:
+      - lotsman-edge
+      - lotsman-internal
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth-svc:
+        condition: service_healthy
+      registry-svc:
+        condition: service_healthy
+      notification-svc:
+        condition: service_healthy
+      audit-svc:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── system-control sidecar ───────────────────────────────────────────────────
+  #
+  # Privileged ops sidecar (restart, backup, migrate, logs, ps).
+  # Security model:
+  #   - Attached ONLY to lotsman-internal network (no host-port mapping).
+  #   - Authenticates every /v1/* request via internal JWT (aud="system-control").
+  #   - Mounts /var/run/docker.sock RW (required for container.restart()).
+  #   - Mounts host scripts directory as RO (backup trigger only).
+  #   - Runs as uid=1001 with the host docker group GID so the process can
+  #     access /var/run/docker.sock without being root.
+  #
+  # Docker group GID:
+  #   Run: stat -c '%g' /var/run/docker.sock
+  #   On most Linux hosts this is 999 (Debian/Ubuntu) or 986 (Arch).
+  #   Set DOCKER_GID in .env or override here.
+  #   If using rootless Docker/Podman the socket may be owned by the user
+  #   directly; in that case set user: "1001:1001" and ensure the socket
+  #   path matches (e.g. $XDG_RUNTIME_DIR/docker.sock).
+  #
+  # If INTERNAL_JWT_KEY_SYSTEM_CONTROL is not set in .env the web-bff will
+  # start but sidecar-backed /api/v1/system/* endpoints will return 503.
+
+  system-control:
+    build:
+      context: ..
+      dockerfile: services/system-control/Dockerfile
+    container_name: lotsman_system_control
+    restart: unless-stopped
+    # Run as uid=1001 with the docker socket group (GID from host).
+    # DOCKER_GID defaults to 999; override in .env if your host differs.
+    # Example: stat -c '%g' /var/run/docker.sock  → use that number.
+    user: "1001:${DOCKER_GID:-999}"
+    env_file:
+      - ../.env
+    environment:
+      SERVICE_NAME: system-control
+      INTERNAL_JWT_KEY_SYSTEM_CONTROL: ${INTERNAL_JWT_KEY_SYSTEM_CONTROL}
+    volumes:
+      # RW required for container.restart() via Docker SDK.
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      # Host backup scripts (RO — sidecar only triggers, never modifies).
+      - ../scripts:/scripts:ro
+      # Hot-reload for dev
+      - ../services/system-control/src/system_control:/app/src/system_control:ro
+      - ../shared/src/lotsman_shared:/app/shared_src/lotsman_shared:ro
+    networks:
+      - lotsman-internal
+    # NO ports: mapping intentionally omitted — internal only.
+    # web-bff reaches this sidecar at http://system-control:8000 (internal DNS).
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ── Frontend dev server ───────────────────────────────────────────────────────
+  # Dev mode: runs `pnpm dev` inside the container via Vite HMR on port 5173.
+  # The API proxy forwards /api → web-bff:8000 (configured in vite.config.ts).
+  # Prod build: use web/Dockerfile (multistage nginx:1.27-alpine).
+
+  web:
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+      target: builder          # dev stage uses the builder image (has pnpm + src)
+    container_name: lotsman_web
+    # Override CMD for dev: run pnpm dev instead of nginx
+    command: ["sh", "-c", "corepack enable && pnpm install && pnpm dev --host 0.0.0.0"]
+    restart: unless-stopped
+    user: "node"
+    working_dir: /app
+    environment:
+      VITE_API_BASE_URL: /api
+      VITE_APP_LOCALE: ru
+    networks:
+      - lotsman-edge
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      - web-bff

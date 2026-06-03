@@ -1,0 +1,279 @@
+# ════════════════════════════════════════════════════════════════════════
+#  Лоцман · Карта данных и потоков  (TALA-aligned, ELK-rendered)
+#
+#  Render:
+#     d2 -l elk -t 4  lotsman-data.d2  lotsman-data.svg
+#
+#  Цель: показать ЧТО хранится, ГДЕ хранится, КУДА течёт. Outbox + Streams
+#  + audit как сквозной flow. Data-flow ownership map (Yourdon DFD), не ER.
+# ════════════════════════════════════════════════════════════════════════
+
+direction: right
+
+# ──────────────────────────────────────────────────────────────────────
+#  Visual vocabulary
+# ──────────────────────────────────────────────────────────────────────
+classes: {
+  entity:     {shape: rectangle; style: {fill: "#FFFFFF"; stroke: "#1F2937"; stroke-width: 2; shadow: true; border-radius: 8; font-size: 12; bold: true}}
+  schema:     {shape: cylinder;  style: {fill: "#FCE4E4"; stroke: "#A21D1D"; stroke-width: 2; shadow: true; font-size: 12; bold: true}}
+  outbox:     {shape: cylinder;  style: {fill: "#FEE2E2"; stroke: "#7F1D1D"; stroke-width: 2; font-size: 11; bold: true}}
+  cache:      {shape: cylinder;  style: {fill: "#F3E8FF"; stroke: "#6B21A8"; stroke-width: 2; shadow: true; font-size: 12; bold: true}}
+  stream:     {shape: queue;     style: {fill: "#EDE9FE"; stroke: "#6B21A8"; stroke-width: 2; shadow: true; font-size: 12; bold: true; italic: true}}
+  worker:     {shape: hexagon;   style: {fill: "#FFF4D1"; stroke: "#7A5800"; stroke-width: 1; font-size: 11}}
+  vol:        {shape: rectangle; style: {fill: "#FEF3C7"; stroke: "#92660E"; stroke-width: 1; border-radius: 6; font-size: 10}}
+  ext:        {shape: cloud;     style: {fill: "#FFF1DC"; stroke: "#9C5500"; stroke-width: 1; font-size: 11}}
+
+  # — edge styles —
+  store:       {style: {stroke: "#A21D1D"; stroke-width: 2; font-size: 10; bold: true}}
+  outbox-tx:   {style: {stroke: "#7F1D1D"; stroke-width: 2; stroke-dash: 3; font-size: 10}}
+  publish:     {style: {stroke: "#7F1D1D"; stroke-width: 3; font-size: 10; bold: true}}
+  consume:     {style: {stroke: "#6B21A8"; stroke-width: 2; stroke-dash: 4; animated: true; font-size: 10; italic: true; bold: true}}
+  query:       {style: {stroke: "#0B6BCB"; stroke-width: 1; font-size: 9}}
+  schedule:    {style: {stroke: "#92660E"; stroke-width: 2; font-size: 10}}
+  egress:      {style: {stroke: "#0F766E"; stroke-width: 2; font-size: 10; bold: true}}
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#  LEGEND
+# ══════════════════════════════════════════════════════════════════════
+legend: "Условные обозначения" {
+  near: bottom-center
+  style: {fill: "#FAFAFA"; stroke: "#9CA3AF"; stroke-width: 1; border-radius: 8; font-size: 12; bold: true}
+  grid-columns: 4
+  grid-gap: 6
+
+  l1: "stored as (бизнес → таблица)" {style: {fill: "#FFFFFF"; stroke: "#A21D1D"; stroke-width: 2; font-size: 10}}
+  l2: "outbox row in same TX"        {style: {fill: "#FFFFFF"; stroke: "#7F1D1D"; stroke-width: 2; stroke-dash: 3; font-size: 10}}
+  l3: "publish (XADD → Stream)"      {style: {fill: "#FFFFFF"; stroke: "#7F1D1D"; stroke-width: 3; font-size: 10}}
+  l4: "consume from Stream"          {style: {fill: "#FFFFFF"; stroke: "#6B21A8"; stroke-width: 2; stroke-dash: 4; font-size: 10}}
+  l5: "READ / FOR UPDATE"            {style: {fill: "#FFFFFF"; stroke: "#0B6BCB"; font-size: 10}}
+  l6: "scheduled job"                {style: {fill: "#FFFFFF"; stroke: "#92660E"; stroke-width: 2; font-size: 10}}
+  l7: "egress (внешний канал)"       {style: {fill: "#FFFFFF"; stroke: "#0F766E"; stroke-width: 2; font-size: 10}}
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#  ENTITIES (бизнес-сущности — что вообще есть в системе)
+# ══════════════════════════════════════════════════════════════════════
+ENTITIES: "📋  Бизнес-сущности" {
+  style: {fill: "#FAFBFC"; stroke: "#1F2937"; stroke-width: 2; border-radius: 12; font-size: 13; bold: true}
+  direction: down
+
+  USER_E:   "User · Сотрудник" {
+    class: entity
+    width: 200
+    tooltip: "Email · ФИО · password_hash (argon2id) · totp_secret_enc (Fernet) · role admin/editor/viewer · backup_codes (10, hashed)"
+  }
+  ASSET_E:  "Asset · Контрагент" {
+    class: entity
+    width: 200
+    tooltip: "Партнёрская компания. Имя · ИНН (10/12 цифр, ФНС-checksum) · юрисдикция (в notes) · soft-delete"
+  }
+  TYPE_E:   "DocumentType" {
+    class: entity
+    width: 200
+    tooltip: "Категория документа. code · display_name · pre_notice_days[] · notify_in_day · overdue_every_days"
+  }
+  DOC_E:    "Document · Документ" {
+    class: entity
+    width: 200
+    tooltip: "Документ типа у контрагента. № · issue_date · expiry_date · responsible_user_id · status · soft-delete"
+  }
+  ATT_E:    "Attachment · Вложение" {
+    class: entity
+    width: 200
+    tooltip: "Файл при документе. mime_type из allowlist · size ≤25 MiB · sha256 · storage_path"
+  }
+  EXPORT_E: "ExportJob · Выгрузка" {
+    class: entity
+    width: 200
+    tooltip: "Async-задача xlsx. snapshot at submit · TTL 24h · path в exports volume"
+  }
+  AUDIT_E:  "AuditEvent · Запись истории" {
+    class: entity
+    width: 200
+    tooltip: "Append-only: actor_id · entity_type · entity_id · event_type · payload · request_id"
+  }
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#  POSTGRES — schemas as compact cylinders (tables → tooltip)
+# ══════════════════════════════════════════════════════════════════════
+PG: "🛢️  PostgreSQL 16  ·  per-service schemas + outbox" {
+  style: {fill: "#FBF1F1"; stroke: "#A21D1D"; stroke-width: 2; border-radius: 12; font-size: 13; bold: true}
+  direction: down
+
+  AUTH_S: "auth.*  (role: auth_app)" {
+    class: schema
+    width: 240; height: 70
+    tooltip: "Tables: users · sessions (refresh_hash sha256) · login_attempts (lockout 5/15min, 10/60min) · totp_used_codes (anti-replay) · backup_codes (argon2id hashed)"
+  }
+  AUTH_OB: "auth.outbox" {
+    class: outbox
+    tooltip: "Events: auth.user.* · auth.session.*. Caught by outbox-dispatcher in same TX as the change."
+  }
+
+  REG_S: "registry.*  (role: registry_app)" {
+    class: schema
+    width: 240; height: 70
+    tooltip: "Tables: assets (pg_trgm GIN на name) · document_types · documents (pg_trgm GIN на number, soft-delete) · attachments (metadata only — файлы на диске) · export_jobs (TTL trigger)"
+  }
+  REG_OB: "registry.outbox" {
+    class: outbox
+    tooltip: "Events: registry.asset.* · registry.document.* · registry.document_type.*. Read by audit-recorder и notification-scheduler."
+  }
+
+  NOTI_S: "notification.*  (role: notification_app)" {
+    class: schema
+    width: 240; height: 70
+    tooltip: "Tables: delivery_attempts (status pending/sent/failed, retry_count, scheduled_at) · message_templates (Jinja2, per-channel, per-locale) · idempotency"
+  }
+  NOTI_OB: "notification.outbox" {
+    class: outbox
+    tooltip: "Events: notification.delivery.{scheduled,sent,failed}. Каждый attempt → audit."
+  }
+
+  AUDIT_S: "audit.events  (role: audit_app · INSERT/SELECT only)" {
+    class: schema
+    width: 280; height: 70
+    tooltip: "Append-only. RANGE-partition по месяцу: events_2026_06, _07, … events_2027_05. REVOKE UPDATE/DELETE с роли — гарантия immutability."
+  }
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#  REDIS — kv + bus в двух компактных узлах
+# ══════════════════════════════════════════════════════════════════════
+REDIS: "🟪  Redis 7  ·  cache + event bus  ·  retain 14 days" {
+  style: {fill: "#F8F3FF"; stroke: "#6B21A8"; stroke-width: 2; border-radius: 12; font-size: 13; bold: true}
+  direction: down
+
+  KV: "key/value  ·  ARQ jobs  ·  sessions" {
+    class: cache
+    width: 280; height: 80
+    tooltip: "Включает: session keys (refresh) · pending TOTP enrollment · jti:`aud`:`jti` replay cache (60s TTL) · lockout:`user_id` · ARQ job queue · admin-lockout flags"
+  }
+
+  STREAMS: "Redis Streams (event bus)" {
+    class: stream
+    width: 280; height: 80
+    tooltip: "6 named streams (по аггрегату): auth.users.* · auth.sessions.* · registry.documents.* · registry.assets.* · registry.document_types.* · notification.deliveries.*. Envelope: id, type, occurred_at, actor_id, payload, request_id, version."
+  }
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#  FILE VOLUMES
+# ══════════════════════════════════════════════════════════════════════
+VOLS: "💾  Файловые тома" {
+  style: {fill: "#FFFBEB"; stroke: "#92660E"; stroke-width: 2; border-radius: 12; font-size: 13; bold: true}
+  direction: down
+
+  ATT_VOL:    "/vol/attachments\n{YYYY}/{MM}/{uuid}.{ext}" {
+    class: vol
+    width: 240; height: 60
+    tooltip: "≤25 MiB · MIME allowlist (PDF/JPEG/PNG/TIFF/DOCX/XLSX) · HMAC-signed URL TTL <60s"
+  }
+  EXPORT_VOL: "/vol/exports\n{job_id}.xlsx" {
+    class: vol
+    width: 240; height: 60
+    tooltip: "TTL 24h · hourly cron purge"
+  }
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#  WORKERS (consumers/producers async)
+# ══════════════════════════════════════════════════════════════════════
+WORKERS: "⚙️  ARQ workers" {
+  style: {fill: "#FBF6E9"; stroke: "#92660E"; stroke-width: 2; border-radius: 12; font-size: 13; bold: true}
+  direction: down
+
+  OUTBOX_W: "outbox-dispatcher" {
+    class: worker
+    width: 220; height: 60
+    tooltip: "По одному инстансу на каждый сервис-writer. SELECT FOR UPDATE SKIP LOCKED → XADD в Stream → mark dispatched_at. 5 retry → outbox_dlq."
+  }
+  AUDIT_REC: "audit-recorder" {
+    class: worker
+    width: 220; height: 60
+    tooltip: "Consumer group `audit-recorder`. Подписан на ВСЕ *.v1 streams. INSERT в текущую месяц-партицию audit.events."
+  }
+  NOTI_SCHED: "notification-scheduler" {
+    class: worker
+    width: 220; height: 60
+    tooltip: "Consumer registry.documents.* и cron tick (60s). UPSERT delivery_attempts на 60 дней вперёд по pre_notice_days типа."
+  }
+  NOTI_DISP: "notification-dispatcher" {
+    class: worker
+    width: 220; height: 60
+    tooltip: "FOR UPDATE SKIP LOCKED делает delivery_attempts WHERE status='pending' AND scheduled_at<=now(). Render шаблон → отправка → status update."
+  }
+  EXPORT_W: "export-worker" {
+    class: worker
+    width: 220; height: 60
+    tooltip: "Атомарный SELECT на момент submit (Q2). openpyxl, 1k chunks. CSV-injection защита (prefix '=/+/-/@/\\t/\\r → ')."
+  }
+  PURGE_W: "purge-expired-exports\n@hourly" {
+    class: worker
+    width: 220; height: 60
+    tooltip: "Удаляет файлы и метаданные старше 24h."
+  }
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#  EXTERNAL CHANNELS
+# ══════════════════════════════════════════════════════════════════════
+EXT: "Внешние каналы" {
+  style: {fill: "transparent"; stroke: "#0F766E"; stroke-dash: 3; border-radius: 8}
+  direction: down
+  SMTP_EXT: "Корпоративный SMTP" {class: ext}
+  TG_EXT:   "Telegram Bot API"   {class: ext}
+  DION_EXT: "Dion API"           {class: ext}
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#  EDGES — поток данных
+# ══════════════════════════════════════════════════════════════════════
+
+# 1. Entities → их «дом» в БД (где живут)
+ENTITIES.USER_E   -> PG.AUTH_S:    "stored as" {class: store}
+ENTITIES.ASSET_E  -> PG.REG_S:     "stored as" {class: store}
+ENTITIES.TYPE_E   -> PG.REG_S:     "stored as" {class: store}
+ENTITIES.DOC_E    -> PG.REG_S:     "stored as" {class: store}
+ENTITIES.ATT_E    -> PG.REG_S:     "metadata"  {class: store}
+ENTITIES.ATT_E    -> VOLS.ATT_VOL: "binary"    {class: store}
+ENTITIES.EXPORT_E -> PG.REG_S:     "metadata"  {class: store}
+ENTITIES.EXPORT_E -> VOLS.EXPORT_VOL: "xlsx file" {class: store}
+ENTITIES.AUDIT_E  -> PG.AUDIT_S:   "INSERT only\n(monthly partition)" {class: store}
+
+# 2. Каждое изменение → outbox row IN THE SAME TX
+PG.AUTH_S -> PG.AUTH_OB:  "INSERT envelope\nin same TX" {class: outbox-tx}
+PG.REG_S  -> PG.REG_OB:   "INSERT envelope\nin same TX" {class: outbox-tx}
+PG.NOTI_S -> PG.NOTI_OB:  "INSERT envelope\nin same TX" {class: outbox-tx}
+
+# 3. Outbox → dispatcher → Streams (XADD)
+PG.AUTH_OB -> WORKERS.OUTBOX_W: "FOR UPDATE\nSKIP LOCKED" {class: query}
+PG.REG_OB  -> WORKERS.OUTBOX_W: "FOR UPDATE\nSKIP LOCKED" {class: query}
+PG.NOTI_OB -> WORKERS.OUTBOX_W: "FOR UPDATE\nSKIP LOCKED" {class: query}
+
+WORKERS.OUTBOX_W -> REDIS.STREAMS: "XADD events\n(6 streams)" {class: publish}
+
+# 4. Audit-recorder consume всех Streams
+REDIS.STREAMS -> WORKERS.AUDIT_REC: "consume all\n*.v1" {class: consume}
+WORKERS.AUDIT_REC -> PG.AUDIT_S: "INSERT" {class: store}
+
+# 5. Notification scheduler consume registry events → создаёт delivery_attempts
+REDIS.STREAMS -> WORKERS.NOTI_SCHED: "consume\nregistry.*" {class: consume}
+WORKERS.NOTI_SCHED -> PG.NOTI_S: "UPSERT\n+60 дней график" {class: schedule}
+
+# 6. Notification dispatcher → внешние каналы
+WORKERS.NOTI_DISP -> PG.NOTI_S: "FOR UPDATE\nSKIP LOCKED" {class: query}
+WORKERS.NOTI_DISP -> EXT.SMTP_EXT: "STARTTLS"        {class: egress}
+WORKERS.NOTI_DISP -> EXT.TG_EXT:   "HTTPS · token"   {class: egress}
+WORKERS.NOTI_DISP -> EXT.DION_EXT: "HTTPS · bearer"  {class: egress}
+
+# 7. Export workers
+WORKERS.EXPORT_W -> PG.REG_S:        "atomic SELECT\non submit" {class: query}
+WORKERS.EXPORT_W -> VOLS.EXPORT_VOL: "write .xlsx"               {class: store}
+WORKERS.PURGE_W  -> PG.REG_S:        "WHERE expires_at < now()"  {class: query}
+WORKERS.PURGE_W  -> VOLS.EXPORT_VOL: "rm files"                  {class: store}
+
+# 8. Auth-service ↔ Redis kv (sessions, replay cache, lockout)
+PG.AUTH_S -> REDIS.KV: "sessions · jti · lockout" {class: query}

@@ -1,0 +1,74 @@
+# Promtail configuration — scrapes Docker container logs for Лоцман
+# All backend services log stdout JSON with mandatory fields:
+#   ts, level, service, request_id, actor_user_id, event
+# Loki labels extracted: service, level (low-cardinality per Loki best practices)
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    backoff_config:
+      min_period: 500ms
+      max_period: 5m
+      max_retries: 10
+
+scrape_configs:
+
+  # Scrape all Лоцман containers via Docker socket
+  # Filters on container_name label prefix lotsman_
+  - job_name: lotsman-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+        filters:
+          - name: name
+            values: ["lotsman_"]
+
+    relabel_configs:
+      # Keep only lotsman_ prefixed containers
+      - source_labels: [__meta_docker_container_name]
+        regex: /lotsman_(.+)
+        target_label: container
+        replacement: $1
+
+      # Use the container name (minus prefix) as the job label
+      - source_labels: [__meta_docker_container_name]
+        regex: /lotsman_(.+)
+        target_label: job
+        replacement: $1
+
+      # Map the docker log stream (stdout/stderr)
+      - source_labels: [__meta_docker_container_log_stream]
+        target_label: stream
+
+    pipeline_stages:
+      # Parse JSON logs emitted by FastAPI services
+      - json:
+          expressions:
+            level:      level
+            service:    service
+            request_id: request_id
+            event:      event
+
+      # Promote service + level to Loki labels (low-cardinality, queryable)
+      - labels:
+          level:
+          service:
+
+      # Timestamp from the log record (ISO 8601)
+      - timestamp:
+          source: ts
+          format: RFC3339Nano
+          fallback_formats:
+            - RFC3339
+
+      # Drop health-check noise to reduce log volume
+      - drop:
+          expression: '.*GET /healthz.*'
+          drop_counter_reason: health_check_noise

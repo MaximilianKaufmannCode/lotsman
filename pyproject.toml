@@ -1,0 +1,97 @@
+[tool.uv.workspace]
+members = [
+    "shared",
+    "services/auth-service",
+    "services/registry-service",
+    "services/notification-service",
+    "services/audit-service",
+    "services/web-bff",
+    "services/system-control",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "import-linter>=2.1",
+    "pip-audit>=2.7",
+    "bandit>=1.7",
+    "freezegun>=1.4",
+    "respx>=0.21",
+    "httpx>=0.27",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "B008",  # do not perform function calls in argument defaults (FastAPI Depends pattern)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]  # allow assert in tests
+# DB-engineer-owned files — long SQL comments, Optional style from earlier schema work
+"services/auth-service/src/auth_service/db/models.py" = ["E501", "UP045", "F401"]
+"services/registry-service/src/registry_service/db/models.py" = ["E501", "UP045", "F401"]
+"services/notification-service/src/notification_service/db/models.py" = ["E501", "UP045", "F401"]
+"services/audit-service/src/audit_service/db/models.py" = ["E501", "UP045", "F401"]
+"services/auth-service/alembic/versions/*.py" = ["E501"]
+"services/registry-service/alembic/versions/*.py" = ["E501"]
+"services/notification-service/alembic/versions/*.py" = ["E501"]
+"services/audit-service/alembic/versions/*.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+namespace_packages = true
+explicit_package_bases = true
+# Per-service src layouts mean mypy needs to know where packages live.
+# Run mypy with --explicit-package-bases or per-package via the per-module section.
+
+[[tool.mypy.overrides]]
+module = [
+    "arq.*",
+    "prometheus_client.*",
+    "redis.*",
+    "docker.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# DB-engineer-owned ORM model files use SQLA features mypy doesn't resolve without plugins.
+module = [
+    "auth_service.db.models",
+    "registry_service.db.models",
+    "notification_service.db.models",
+    "audit_service.db.models",
+]
+ignore_errors = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "--import-mode=importlib"
+# importlib mode resolves test file collisions (multiple services have test_config.py etc.)
+# without requiring __init__.py in test directories.
+testpaths = [
+    "shared/tests",
+    "services/auth-service/tests",
+    "services/registry-service/tests",
+    "services/notification-service/tests",
+    "services/audit-service/tests",
+    "services/web-bff/tests",
+    "services/system-control/tests",
+]
+pythonpath = [
+    "shared/src",
+    "services/auth-service/src",
+    "services/registry-service/src",
+    "services/notification-service/src",
+    "services/audit-service/src",
+    "services/web-bff/src",
+    "services/system-control/src",
+]

@@ -1,0 +1,214 @@
+# ════════════════════════════════════════════════════════════════════════
+#  Лоцман · Карта логических компонентов  (TALA-aligned, ELK-rendered)
+#
+#  Render:
+#     d2 -l elk -t 4  lotsman-logic.d2  lotsman-logic.svg
+#
+#  Принципы:
+#    · 8 edge-classes (semantic)                 — Hick's law / TALA §6.3
+#    · hub vs regular node                       — gestalt similarity
+#    · on-canvas legend                          — TALA §6.3
+#    · explicit width/height for hubs            — TALA §6.1, §3.12
+#    · single-line label + tooltip               — TALA §6.2
+#    · vertical stack для backend services       — TALA §3.2
+# ════════════════════════════════════════════════════════════════════════
+
+direction: right
+
+# ──────────────────────────────────────────────────────────────────────
+#  Visual vocabulary
+# ──────────────────────────────────────────────────────────────────────
+classes: {
+  # — node shapes —
+  actor:    {shape: person;    style: {fill: "#DCE9F7"; stroke: "#1F4E79"; stroke-width: 2; font-size: 13; bold: true}}
+  ext:      {shape: cloud;     style: {fill: "#FFF1DC"; stroke: "#9C5500"; stroke-width: 1; font-size: 11}}
+  edge:     {shape: rectangle; style: {fill: "#FFFFFF"; stroke: "#7A4040"; stroke-width: 2; shadow: true; border-radius: 10; font-size: 13; bold: true}}
+  hub:      {shape: rectangle; style: {fill: "#FFFFFF"; stroke: "#1F2937"; stroke-width: 2; shadow: true; border-radius: 10; font-size: 13; bold: true}}
+  spa:      {shape: rectangle; style: {fill: "#E0F2FE"; stroke: "#0B6BCB"; stroke-width: 2; shadow: true; border-radius: 10; font-size: 13; bold: true}}
+  bff:      {shape: rectangle; style: {fill: "#DCFCE7"; stroke: "#166534"; stroke-width: 2; shadow: true; border-radius: 10; font-size: 13; bold: true}}
+  svc:      {shape: rectangle; style: {fill: "#FFFFFF"; stroke: "#3B5A75"; stroke-width: 1; border-radius: 6; font-size: 11}}
+  worker:   {shape: hexagon;   style: {fill: "#FFF4D1"; stroke: "#7A5800"; stroke-width: 1; font-size: 10}}
+  db:       {shape: cylinder;  style: {fill: "#FCE4E4"; stroke: "#A21D1D"; stroke-width: 1; font-size: 10}}
+  cache:    {shape: cylinder;  style: {fill: "#F3E8FF"; stroke: "#6B21A8"; stroke-width: 1; font-size: 10}}
+  bus:      {shape: queue;     style: {fill: "#F3E8FF"; stroke: "#6B21A8"; stroke-width: 2; font-size: 10; italic: true}}
+  vol:      {shape: rectangle; style: {fill: "#FEF3C7"; stroke: "#92660E"; stroke-width: 1; border-radius: 6; font-size: 10}}
+
+  # — edge styles (8 semantic classes) —
+  ui-req:        {style: {stroke: "#1F4E79"; stroke-width: 3; font-size: 10; bold: true}}    # user → system
+  proxy:         {style: {stroke: "#7A4040"; stroke-width: 2; font-size: 10}}                # Nginx → внутренние
+  internal-rpc:  {style: {stroke: "#166534"; stroke-width: 2; font-size: 10; bold: true}}    # BFF → backend (internal JWT)
+  db-io:         {style: {stroke: "#A21D1D"; stroke-width: 1; font-size: 9}}                 # service → Postgres
+  cache-io:      {style: {stroke: "#6B21A8"; stroke-width: 1; font-size: 9}}                 # service → Redis kv
+  async-event:   {style: {stroke: "#9F7AEA"; stroke-width: 2; stroke-dash: 4; animated: true; font-size: 10; italic: true}}
+  file-io:       {style: {stroke: "#92660E"; stroke-width: 1; font-size: 9}}
+  egress:        {style: {stroke: "#0F766E"; stroke-width: 2; font-size: 10; bold: true}}    # → внешка
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#  ON-CANVAS LEGEND
+# ══════════════════════════════════════════════════════════════════════
+legend: "Условные обозначения" {
+  near: bottom-center
+  style: {fill: "#FAFAFA"; stroke: "#9CA3AF"; stroke-width: 1; border-radius: 8; font-size: 12; bold: true}
+  grid-columns: 4
+  grid-gap: 6
+
+  l1: "user → система"            {style: {fill: "#FFFFFF"; stroke: "#1F4E79"; stroke-width: 3; font-size: 10}}
+  l2: "Nginx proxy"               {style: {fill: "#FFFFFF"; stroke: "#7A4040"; stroke-width: 2; font-size: 10}}
+  l3: "BFF → backend (internal JWT)" {style: {fill: "#FFFFFF"; stroke: "#166534"; stroke-width: 2; font-size: 10}}
+  l4: "service → Postgres"        {style: {fill: "#FFFFFF"; stroke: "#A21D1D"; font-size: 10}}
+  l5: "service → Redis kv"        {style: {fill: "#FFFFFF"; stroke: "#6B21A8"; font-size: 10}}
+  l6: "async event (Streams)"     {style: {fill: "#FFFFFF"; stroke: "#9F7AEA"; stroke-width: 2; stroke-dash: 4; font-size: 10}}
+  l7: "файловое I/O"              {style: {fill: "#FFFFFF"; stroke: "#92660E"; font-size: 10}}
+  l8: "egress (внешний канал)"    {style: {fill: "#FFFFFF"; stroke: "#0F766E"; stroke-width: 2; font-size: 10}}
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#  HUMANS (left)
+# ══════════════════════════════════════════════════════════════════════
+USER: "Сотрудник отдела" {
+  class: actor
+  tooltip: "2–4 специалиста: admin / editor / viewer. Доступ через корпоративный VPN."
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#  EXTERNAL CHANNELS (right)
+# ══════════════════════════════════════════════════════════════════════
+SMTP_EXT: "Корпоративный SMTP" {class: ext; tooltip: "TLS-релей, сервер организации"}
+TG_EXT:   "Telegram Bot API"   {class: ext; tooltip: "api.telegram.org · push в личные чаты сотрудников"}
+DION_EXT: "Dion API"           {class: ext; tooltip: "faq.dion.vc/.../api · корпоративный мессенджер"}
+
+# ══════════════════════════════════════════════════════════════════════
+#  ON-PREMISE HOST · Docker Compose
+# ══════════════════════════════════════════════════════════════════════
+HOST: "🖥️  on-premise host  ·  Docker Compose" {
+  style: {fill: "#FAFBFC"; stroke: "#2D3F50"; stroke-width: 2; border-radius: 12; font-size: 13; bold: true}
+  direction: down
+
+  # ── Edge tier ─────────────────────────────────────────────────────
+  EDGE_TIER: "Edge" {
+    style: {fill: "#FFF0F0"; stroke: "#7A4040"; stroke-dash: 3; border-radius: 8}
+    NGINX: "Nginx 1.27  ·  :443" {
+      class: edge
+      width: 240; height: 70
+      tooltip: "TLS 1.2/1.3 termination · HSTS / X-Frame DENY / CSP · rate-limit зоны: login 5/min · refresh 30/min · api 200/min · reverse_proxy → web-bff"
+    }
+  }
+
+  # ── Frontend ──────────────────────────────────────────────────────
+  FRONT_TIER: "Frontend" {
+    style: {fill: "#EFF8FF"; stroke: "#0B6BCB"; stroke-dash: 3; border-radius: 8}
+    WEB: "Web SPA  ·  React 19 + TS" {
+      class: spa
+      width: 240; height: 70
+      tooltip: "Vite 6 · TanStack Router/Query/Table/Virtual · Tailwind 4 · shadcn/ui · cmdk · i18n RU/EN. Access JWT в памяти, refresh — HttpOnly cookie. BroadcastChannel для multi-tab. Global 401 interceptor."
+    }
+  }
+
+  # ── BFF ───────────────────────────────────────────────────────────
+  BFF_TIER: "BFF gateway  ·  lotsman-edge network" {
+    style: {fill: "#ECF8EF"; stroke: "#166534"; stroke-dash: 3; border-radius: 8}
+    BFF: "web-bff  ·  :8000" {
+      class: bff
+      width: 240; height: 70
+      tooltip: "FastAPI · проверяет внешний RS256 access JWT · минтит internal JWT (HS256, 60s, audience-bound) per downstream · InboundHeaderSanitiser (закрывает F-008) · фан-аут к 4 backend-сервисам · НЕ содержит бизнес-логики"
+    }
+  }
+
+  # ── Backend services (vertical stack) ─────────────────────────────
+  BACKEND: "Backend  ·  lotsman-internal network" {
+    style: {fill: "#F5F8FB"; stroke: "#3B5A75"; stroke-dash: 3; border-radius: 8}
+    direction: down
+
+    AUTH: "auth-service" {
+      class: hub
+      width: 220; height: 60
+      tooltip: "argon2id passwords · pyotp TOTP · Fernet for TOTP secret · RS256 access (15 min) + opaque rotated refresh (7 days) · lockout policy 5/15min · backup-коды (10, argon2id-hashed) · admin-only password reset"
+    }
+    REGISTRY: "registry-service" {
+      class: hub
+      width: 220; height: 60
+      tooltip: "Assets · DocumentTypes · Documents · Attachments · ExportJobs · INN ФНС-checksum · MIME allowlist (PDF/JPEG/PNG/TIFF/DOCX/XLSX) · xlsx import + export (openpyxl) с защитой от CSV-injection · pg_trgm + ILIKE fallback search · 27 use cases"
+    }
+    NOTIFY: "notification-service" {
+      class: hub
+      width: 220; height: 60
+      tooltip: "ARQ scheduler (tick 60s) · pre-notice / in-day / overdue по pre_notice_days типа · шаблоны Jinja2 · провайдеры Email (aiosmtplib) / Telegram (PTB) / Dion (httpx) · retry с exp-backoff + DLQ · idempotency-кэш"
+    }
+    AUDIT: "audit-service" {
+      class: hub
+      width: 220; height: 60
+      tooltip: "Append-only consumer всех `*.v1` Redis Streams (consumer group `audit-recorder`) · пишет в audit.events (RANGE-partition по месяцу) · read-only API «история изменений» · единственный сервис с REVOKE UPDATE/DELETE на свою роль"
+    }
+  }
+
+  # ── Data tier ─────────────────────────────────────────────────────
+  DATA: "Data" {
+    style: {fill: "#FBF1F1"; stroke: "#A21D1D"; stroke-dash: 3; border-radius: 8}
+    direction: down
+
+    PG: "PostgreSQL 16  ·  4 schemas" {
+      class: db
+      width: 220; height: 60
+      tooltip: "Single instance, схемы: auth · registry · notification · audit. Per-service роли: auth_app, registry_app, notification_app, audit_app. No cross-schema FK. pg_trgm + citext + pgcrypto."
+    }
+    REDIS: "Redis 7  ·  cache + bus" {
+      class: cache
+      width: 220; height: 60
+      tooltip: "Sessions · pending TOTP enrollment · ARQ jobs · admin lockout flags · jti replay cache (60s TTL) · Redis Streams (event bus, retain 14 дней)"
+    }
+    FILES: "Файловые тома" {
+      class: vol
+      width: 220; height: 60
+      tooltip: "/vol/attachments/{YYYY}/{MM}/{uuid}.{ext} (≤25 MiB, MIME-allowlist, signed URL TTL <60s) и /vol/exports/{job_id}.xlsx (TTL 24h, hourly cron purge)"
+    }
+  }
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#  EDGES
+# ══════════════════════════════════════════════════════════════════════
+
+# ── Пользователь → Edge ───────────────────────────────────────────────
+USER -> HOST.EDGE_TIER.NGINX: "HTTPS\nкорп. VPN" {class: ui-req}
+
+# ── Nginx → SPA / BFF ─────────────────────────────────────────────────
+HOST.EDGE_TIER.NGINX -> HOST.FRONT_TIER.WEB: "статика SPA" {class: proxy}
+HOST.EDGE_TIER.NGINX -> HOST.BFF_TIER.BFF:   "/api/* proxy" {class: proxy}
+
+# ── SPA → BFF ─────────────────────────────────────────────────────────
+HOST.FRONT_TIER.WEB -> HOST.BFF_TIER.BFF: "Bearer access JWT" {class: ui-req}
+
+# ── BFF → 4 backend (звёздная топология; ADR-0002 §B) ─────────────────
+HOST.BFF_TIER.BFF -> HOST.BACKEND.AUTH:     "internal JWT\naud=auth-service" {class: internal-rpc}
+HOST.BFF_TIER.BFF -> HOST.BACKEND.REGISTRY: "internal JWT\naud=registry-service" {class: internal-rpc}
+HOST.BFF_TIER.BFF -> HOST.BACKEND.NOTIFY:   "internal JWT\naud=notification-service" {class: internal-rpc}
+HOST.BFF_TIER.BFF -> HOST.BACKEND.AUDIT:    "internal JWT\naud=audit-service\n(read-only история)" {class: internal-rpc}
+
+# ── BFF → Redis (короткие session-ключи + replay cache) ───────────────
+HOST.BFF_TIER.BFF -> HOST.DATA.REDIS: "session keys" {class: cache-io}
+
+# ── Backend → Postgres (per-service schema) ───────────────────────────
+HOST.BACKEND.AUTH     -> HOST.DATA.PG: "auth.*" {class: db-io}
+HOST.BACKEND.REGISTRY -> HOST.DATA.PG: "registry.*" {class: db-io}
+HOST.BACKEND.NOTIFY   -> HOST.DATA.PG: "notification.*" {class: db-io}
+HOST.BACKEND.AUDIT    -> HOST.DATA.PG: "audit.*\nINSERT/SELECT only" {class: db-io}
+
+# ── Backend ↔ Redis (cache + ARQ + Streams) ───────────────────────────
+HOST.BACKEND.AUTH     -> HOST.DATA.REDIS: "cache" {class: cache-io}
+HOST.BACKEND.REGISTRY -> HOST.DATA.REDIS: "cache" {class: cache-io}
+HOST.BACKEND.NOTIFY   -> HOST.DATA.REDIS: "ARQ jobs" {class: cache-io}
+
+# ── Async events (через Redis Streams; XADD из outbox-dispatcher'а) ──
+HOST.BACKEND.REGISTRY -> HOST.BACKEND.AUDIT:  "registry.*.v1" {class: async-event}
+HOST.BACKEND.AUTH     -> HOST.BACKEND.AUDIT:  "auth.*.v1" {class: async-event}
+HOST.BACKEND.NOTIFY   -> HOST.BACKEND.AUDIT:  "notification.*.v1" {class: async-event}
+HOST.BACKEND.REGISTRY -> HOST.BACKEND.NOTIFY: "registry.documents.*.v1\n→ scheduler" {class: async-event}
+
+# ── Registry → файловые тома ──────────────────────────────────────────
+HOST.BACKEND.REGISTRY -> HOST.DATA.FILES: "save / signed URL" {class: file-io}
+
+# ── Notification → внешние каналы ─────────────────────────────────────
+HOST.BACKEND.NOTIFY -> SMTP_EXT: "STARTTLS" {class: egress}
+HOST.BACKEND.NOTIFY -> TG_EXT:   "HTTPS · bot token" {class: egress}
+HOST.BACKEND.NOTIFY -> DION_EXT: "HTTPS · bearer" {class: egress}

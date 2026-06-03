@@ -1,0 +1,95 @@
+[project]
+name = "auth-service"
+version = "0.1.0"
+license = "BUSL-1.1"
+description = "Lotsman auth-service — users, sessions, TOTP, JWT"
+requires-python = ">=3.12"
+dependencies = [
+    # Shared kernel
+    "lotsman-shared",
+    # Web framework
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.29,<1",
+    # Database / migrations
+    "alembic>=1.13,<2",
+    "sqlalchemy[asyncio]>=2.0,<3",
+    "asyncpg>=0.29",
+    "psycopg[binary]>=3.1",
+    # Config
+    "pydantic-settings>=2.2,<3",
+    # Async HTTP client
+    "httpx>=0.27,<1",
+    # Background jobs
+    "arq>=0.25",
+    # Retry
+    "tenacity>=8.2,<9",
+    # Observability
+    "structlog>=24.1,<25",
+    "prometheus-client>=0.20,<1",
+    # Auth crypto
+    "argon2-cffi>=23.1,<24",
+    "pyotp>=2.9,<3",
+    "cryptography>=42,<45",
+    "pyjwt[crypto]>=2.8,<3",
+    # Redis client
+    "redis[hiredis]>=5.0,<6",
+    # Email validation
+    "email-validator>=2.1,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5",
+    "respx>=0.21",
+    "freezegun>=1.4",
+    "testcontainers[postgres,redis]>=4",
+    "hypothesis>=6",
+    "faker>=25",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    # In-process Redis fake for unit tests that exercise real store logic
+    # (T1 legacy-value, T8 TTL check) without requiring a Docker container.
+    "fakeredis[aioredis]>=2.21",
+]
+
+[tool.uv.sources]
+lotsman-shared = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "coverage>=7.13.5",
+    "fakeredis[aioredis]>=2.21",
+    "hypothesis>=6.152.4",
+    "pytest-cov>=7.1.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/auth_service"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+"src/auth_service/db/models.py" = ["E501", "UP045", "F401"]
+"alembic/versions/*.py" = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--cov=src --cov-report=term-missing"
+
+[tool.mypy]
+strict = true
+python_version = "3.12"

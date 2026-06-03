@@ -1,0 +1,80 @@
+[project]
+name = "notification-service"
+version = "0.1.0"
+license = "BUSL-1.1"
+description = "Lotsman notification-service — delivery rules, attempts, templates"
+requires-python = ">=3.12"
+dependencies = [
+    "lotsman-shared",
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.29,<1",
+    "alembic>=1.13,<2",
+    "sqlalchemy[asyncio]>=2.0,<3",
+    "asyncpg>=0.29",
+    "psycopg[binary]>=3.1",
+    "pydantic-settings>=2.2,<3",
+    "httpx>=0.27,<1",
+    "arq>=0.25",
+    "tenacity>=8.2,<9",
+    "structlog>=24.1,<25",
+    "prometheus-client>=0.20,<1",
+    # Channel config encryption (ADR-0004 §4 / US-16)
+    "cryptography>=42,<45",
+    # Email validation for channel config Pydantic models
+    "email-validator>=2.1,<3",
+    # Email provider for TestChannel use case
+    "aiosmtplib>=3.0,<4",
+    # Redis for invite pending-check
+    "redis[hiredis]>=5.0,<6",
+    # Exchange Calendar integration (ADR-0005 §3).
+    # exchangelib uses sync I/O; wrapped in asyncio.to_thread() in EwsCalendarDriver.
+    # Note: NTLM auth requires requests-ntlm (pure Python, no apt deps).
+    # If Kerberos is needed, install libsasl2-modules-gssapi-mit in the Dockerfile
+    # and add extras: exchangelib[kerberos].
+    "exchangelib>=5.5.0",
+    # ICS feed generation (ADR-0005 §10).
+    "icalendar>=5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "freezegun>=1.4",
+    "testcontainers[postgres]>=4",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[tool.uv.sources]
+lotsman-shared = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/notification_service"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+"src/notification_service/db/models.py" = ["E501", "UP045", "F401"]
+"alembic/versions/*.py" = ["E501"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+
+[[tool.mypy.overrides]]
+module = ["exchangelib", "exchangelib.*", "icalendar", "icalendar.*"]
+ignore_missing_imports = true
+ignore_errors = true

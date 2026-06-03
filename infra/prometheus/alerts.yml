@@ -1,0 +1,103 @@
+# Prometheus alerting rules for Лоцман
+# Per ops conventions:
+#   - Service down >2 min
+#   - Error rate >2% over 5 min
+#   - DB connections >80%
+#   - ARQ queue depth >100
+
+groups:
+
+  - name: lotsman.availability
+    rules:
+
+      - alert: ServiceDown
+        expr: up{job=~"auth-svc|registry-svc|notification-svc|audit-svc|web-bff"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: >
+            {{ $labels.job }} (instance {{ $labels.instance }}) has been unreachable
+            for more than 2 minutes. Check container logs: docker logs lotsman_{{ $labels.job }}.
+
+      - alert: HighErrorRate
+        # Assumes services expose http_requests_total{status=~"5.."} via prometheus_client
+        expr: >
+          sum by (job) (
+            rate(http_requests_total{status=~"5..", job=~"auth-svc|registry-svc|notification-svc|audit-svc|web-bff"}[5m])
+          )
+          /
+          sum by (job) (
+            rate(http_requests_total{job=~"auth-svc|registry-svc|notification-svc|audit-svc|web-bff"}[5m])
+          ) > 0.02
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on {{ $labels.job }}"
+          description: >
+            {{ $labels.job }} has a 5xx error rate above 2% for the last 5 minutes
+            (current: {{ printf \"%.1f\" (mul $value 100) }}%).
+
+  - name: lotsman.database
+    rules:
+
+      - alert: PostgresConnectionsHigh
+        # Assumes postgres-exporter is deployed (pg_stat_database_numbackends)
+        # Threshold: >80% of max_connections (default 100 → threshold 80)
+        expr: >
+          pg_stat_database_numbackends{datname="lotsman"}
+          / pg_settings_max_connections > 0.80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Postgres connection count above 80%"
+          description: >
+            The lotsman database has {{ $value | humanizePercentage }} of max_connections
+            in use. Consider increasing max_connections or reducing pool sizes.
+
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Postgres is unreachable"
+          description: "The postgres-exporter cannot connect to Postgres. Immediate action required."
+
+  - name: lotsman.queues
+    rules:
+
+      - alert: ArqQueueDepthHigh
+        # Assumes services expose arq_queue_depth gauge
+        expr: arq_queue_depth > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ARQ queue depth above 100 on {{ $labels.job }}"
+          description: >
+            {{ $labels.job }} queue depth is {{ $value }}. Workers may be stalled or
+            underpowered. Check Redis connectivity and worker logs.
+
+  - name: lotsman.latency
+    rules:
+
+      - alert: HighP99Latency
+        # Assumes services expose http_request_duration_seconds histogram
+        expr: >
+          histogram_quantile(0.99,
+            sum by (job, le) (
+              rate(http_request_duration_seconds_bucket{job=~"auth-svc|registry-svc|notification-svc|audit-svc|web-bff"}[5m])
+            )
+          ) > 2.0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p99 latency above 2s on {{ $labels.job }}"
+          description: >
+            99th-percentile response time for {{ $labels.job }} has been above 2 seconds
+            for 10 minutes. Check slow query logs and downstream dependencies.

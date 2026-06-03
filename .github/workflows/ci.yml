@@ -1,0 +1,205 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+# Cancel in-progress runs for the same branch on new pushes
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ── Python: lint, typecheck, test ───────────────────────────────────────────
+  python:
+    name: Python (lint / typecheck / test)
+    runs-on: ubuntu-latest
+    # Skip if there are no Python source files yet (bootstrap stage tolerance)
+    if: >
+      hashFiles('services/**/*.py') != '' ||
+      hashFiles('services/**/pyproject.toml') != ''
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB:       lotsman
+          POSTGRES_USER:     postgres
+          POSTGRES_PASSWORD: ci_pg_password
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U postgres -d lotsman"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - "6379:6379"
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # CI-only test database URLs (uses postgres superuser for test isolation)
+      AUTH_DATABASE_URL:         postgresql+asyncpg://postgres:ci_pg_password@localhost:5432/lotsman
+      REGISTRY_DATABASE_URL:     postgresql+asyncpg://postgres:ci_pg_password@localhost:5432/lotsman
+      NOTIFICATION_DATABASE_URL: postgresql+asyncpg://postgres:ci_pg_password@localhost:5432/lotsman
+      AUDIT_DATABASE_URL:        postgresql+asyncpg://postgres:ci_pg_password@localhost:5432/lotsman
+      REDIS_URL:                 redis://localhost:6379/0
+      LOTSMAN_ENV:               test
+      LOG_LEVEL:                 warning
+      # Placeholder secrets for test isolation — not real values
+      INTERNAL_JWT_SECRET:       ci_internal_jwt_secret_placeholder
+      TOTP_ENC_KEY:              ${{ secrets.CI_TOTP_ENC_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Install Python dependencies
+        run: uv sync --all-extras
+
+      - name: Lint — ruff check
+        run: uv run ruff check .
+
+      - name: Format check — ruff format
+        run: uv run ruff format --check .
+
+      - name: Type check — mypy --strict
+        run: uv run mypy --strict services/
+
+      - name: Security — bandit
+        run: uv run bandit -r services/*/src -ll -f json -o bandit-report.json
+        continue-on-error: false  # bandit findings at medium+ severity block the build
+
+      - name: Upload bandit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.json
+          retention-days: 30
+
+      - name: Tests — pytest with coverage
+        run: uv run pytest -q --cov --cov-report=xml --cov-fail-under=80
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          retention-days: 30
+
+  # ── Frontend: lint, typecheck, test, build ──────────────────────────────────
+  web:
+    name: Frontend (lint / typecheck / test / build)
+    runs-on: ubuntu-latest
+    # Skip if there is no frontend code yet (bootstrap stage tolerance)
+    if: hashFiles('web/package.json') != ''
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm -C web install --frozen-lockfile
+
+      - name: Lint — biome check
+        run: pnpm -C web biome check
+
+      - name: Type check — tsc
+        run: pnpm -C web tsc --noEmit
+
+      - name: Test — vitest
+        run: pnpm -C web test --run
+
+      - name: Build
+        run: pnpm -C web build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist/
+          retention-days: 7
+
+  # ── Docker image builds ─────────────────────────────────────────────────────
+  build-images:
+    name: Build Docker images
+    runs-on: ubuntu-latest
+    # Only build on push to main/develop or on tagged releases
+    if: github.event_name == 'push'
+    needs: [python, web]
+    # Allow build to run even if python/web jobs were skipped (no code yet)
+    # The `needs` with `if` above still permits the job to run if those jobs
+    # were skipped (GitHub treats skipped as success for needs purposes).
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build all images (no push on CI — push handled by release.yml)
+        run: |
+          if [ -f services/auth-service/Dockerfile ]; then
+            docker build -t lotsman/auth-svc:ci services/auth-service/
+          else
+            echo "No Dockerfile for auth-service yet — skipping"
+          fi
+          if [ -f services/registry-service/Dockerfile ]; then
+            docker build -t lotsman/registry-svc:ci services/registry-service/
+          else
+            echo "No Dockerfile for registry-service yet — skipping"
+          fi
+          if [ -f services/notification-service/Dockerfile ]; then
+            docker build -t lotsman/notification-svc:ci services/notification-service/
+          else
+            echo "No Dockerfile for notification-service yet — skipping"
+          fi
+          if [ -f services/audit-service/Dockerfile ]; then
+            docker build -t lotsman/audit-svc:ci services/audit-service/
+          else
+            echo "No Dockerfile for audit-service yet — skipping"
+          fi
+          if [ -f web/Dockerfile ]; then
+            docker build -t lotsman/web-bff:ci web/
+          else
+            echo "No Dockerfile for web-bff yet — skipping"
+          fi
+
+  # ── Secrets scan (gitleaks) — runs on every PR/push ────────────────────────
+  gitleaks:
+    name: Secret scan — gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for gitleaks
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

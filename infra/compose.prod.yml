@@ -1,0 +1,250 @@
+# Лоцман — production stack
+# Usage: make up   (or: docker compose -f infra/compose.prod.yml up -d)
+#
+# Key differences from compose.dev.yml:
+#   - Images pinned to lotsman/<svc>:${LOTSMAN_VERSION} (no build:)
+#   - No port exposure for Postgres or Redis outside the compose network
+#   - restart: unless-stopped on stateless services
+#   - Postgres restart managed manually (avoid split-brain on accidental restart)
+#   - Mailpit excluded — real SMTP relay is configured instead
+#   - Tighter healthcheck intervals + higher retries for production SLO
+#
+# Image pinning: set LOTSMAN_VERSION to a semver tag matching your release.
+# Digest pinning (recommended): replace :${LOTSMAN_VERSION} with @sha256:...
+# after a successful build — see the operations runbook.
+#
+# POSTGRES_PASSWORD and all _PG_PASSWORD vars MUST be set in the host environment
+# or via a secrets manager (docker secrets / pass). Never put them in this file.
+
+name: lotsman
+
+networks:
+  lotsman-edge:
+    driver: bridge
+  lotsman-internal:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+
+services:
+
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: lotsman_postgres
+    # Deliberately no restart policy: Postgres must be restarted by an operator
+    # who can verify data integrity. Use `docker start lotsman_postgres` manually.
+    restart: "no"
+    environment:
+      POSTGRES_DB: lotsman
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    # No host port exposure — accessible only within the compose network
+    networks:
+      - lotsman-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lotsman"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    container_name: lotsman_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 512mb
+      --maxmemory-policy noeviction
+    volumes:
+      - redis-data:/data
+    # No host port exposure
+    networks:
+      - lotsman-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Backend services ─────────────────────────────────────────────────────────
+  # IMPORTANT: Replace :${LOTSMAN_VERSION} with digest pins after each release.
+  # Example: image: lotsman/auth-svc@sha256:<digest>
+
+  auth-svc:
+    image: lotsman/auth-svc:${LOTSMAN_VERSION}
+    container_name: lotsman_auth_svc
+    restart: unless-stopped
+    user: "1001:1001"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: ${AUTH_DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      SERVICE_NAME: auth-service
+      LOTSMAN_ENV: production
+    networks:
+      - lotsman-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  registry-svc:
+    image: lotsman/registry-svc:${LOTSMAN_VERSION}
+    container_name: lotsman_registry_svc
+    restart: unless-stopped
+    user: "1001:1001"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: ${REGISTRY_DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      SERVICE_NAME: registry-service
+      LOTSMAN_ENV: production
+    networks:
+      - lotsman-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  notification-svc:
+    image: lotsman/notification-svc:${LOTSMAN_VERSION}
+    container_name: lotsman_notification_svc
+    restart: unless-stopped
+    user: "1001:1001"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: ${NOTIFICATION_DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      SERVICE_NAME: notification-service
+      LOTSMAN_ENV: production
+      # Public base URL for deep links in reminder emails / calendar events.
+      # MUST be the externally reachable host (not lotsman.example.com) on any
+      # environment users reach from outside the corporate network.
+      WEB_BFF_URL: ${WEB_BFF_URL:-https://lotsman.example.com}
+    networks:
+      - lotsman-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  audit-svc:
+    image: lotsman/audit-svc:${LOTSMAN_VERSION}
+    container_name: lotsman_audit_svc
+    restart: unless-stopped
+    user: "1001:1001"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: ${AUDIT_DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      SERVICE_NAME: audit-service
+      LOTSMAN_ENV: production
+    networks:
+      - lotsman-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  web-bff:
+    image: lotsman/web-bff:${LOTSMAN_VERSION}
+    container_name: lotsman_web_bff
+    restart: unless-stopped
+    user: "1001:1001"
+    env_file:
+      - ../.env
+    environment:
+      REDIS_URL: ${REDIS_URL}
+      SERVICE_NAME: web-bff
+      AUTH_SVC_URL: http://auth-svc:8000
+      REGISTRY_SVC_URL: http://registry-svc:8000
+      NOTIFICATION_SVC_URL: http://notification-svc:8000
+      AUDIT_SVC_URL: http://audit-svc:8000
+      LOTSMAN_ENV: production
+    networks:
+      - lotsman-edge
+      - lotsman-internal
+    # No direct host exposure — Nginx is the only ingress
+    depends_on:
+      auth-svc:
+        condition: service_healthy
+      registry-svc:
+        condition: service_healthy
+      notification-svc:
+        condition: service_healthy
+      audit-svc:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: lotsman_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    networks:
+      - lotsman-edge
+    depends_on:
+      web-bff:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

@@ -1,0 +1,208 @@
+# ════════════════════════════════════════════════════════════════════════
+#  Лоцман · Прохождение сетевого трафика  (TALA-aligned, ELK-rendered)
+#
+#  Render:
+#     d2 -l elk -t 4  lotsman-traffic.d2  lotsman-traffic.svg
+#
+#  Цель: визуализировать ОДИН HTTPS-запрос от browser до bytes-on-wire,
+#  показать на каждом hop что происходит (TLS, JWT, авторизация, …).
+#  Это network/security view, не структурный.
+# ════════════════════════════════════════════════════════════════════════
+
+direction: right
+
+# ──────────────────────────────────────────────────────────────────────
+#  Visual vocabulary
+# ──────────────────────────────────────────────────────────────────────
+classes: {
+  actor:    {shape: person;    style: {fill: "#DCE9F7"; stroke: "#1F4E79"; stroke-width: 2; font-size: 13; bold: true}}
+  hop:      {shape: rectangle; style: {fill: "#FFFFFF"; stroke: "#1F2937"; stroke-width: 2; shadow: true; border-radius: 10; font-size: 12; bold: true}}
+  guard:    {shape: rectangle; style: {fill: "#FEF3C7"; stroke: "#92660E"; stroke-width: 2; border-radius: 6; font-size: 11; italic: true}}
+  store:    {shape: cylinder;  style: {fill: "#FCE4E4"; stroke: "#A21D1D"; stroke-width: 1; font-size: 10}}
+  ext:      {shape: cloud;     style: {fill: "#FFF1DC"; stroke: "#9C5500"; stroke-width: 1; font-size: 11}}
+  reject:   {shape: rectangle; style: {fill: "#FECACA"; stroke: "#B91C1C"; stroke-width: 2; border-radius: 6; font-size: 11; bold: true}}
+
+  # — edge styles —
+  encrypted:   {style: {stroke: "#0B6BCB"; stroke-width: 3; font-size: 10; bold: true}}
+  plain:       {style: {stroke: "#475569"; stroke-width: 2; font-size: 10}}
+  rpc:         {style: {stroke: "#166534"; stroke-width: 2; font-size: 10; bold: true}}
+  storage:     {style: {stroke: "#A21D1D"; stroke-width: 1; font-size: 9}}
+  fail:        {style: {stroke: "#B91C1C"; stroke-width: 2; stroke-dash: 5; font-size: 10; bold: true}}
+  cookie:      {style: {stroke: "#7E22CE"; stroke-width: 2; stroke-dash: 3; font-size: 10}}
+  egress:      {style: {stroke: "#0F766E"; stroke-width: 2; font-size: 10; bold: true}}
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#  LEGEND
+# ══════════════════════════════════════════════════════════════════════
+legend: "Условные обозначения" {
+  near: bottom-center
+  style: {fill: "#FAFAFA"; stroke: "#9CA3AF"; stroke-width: 1; border-radius: 8; font-size: 12; bold: true}
+  grid-columns: 4
+  grid-gap: 6
+
+  l1: "TLS / HTTPS"             {style: {fill: "#FFFFFF"; stroke: "#0B6BCB"; stroke-width: 3; font-size: 10}}
+  l2: "plain HTTP intra-host"   {style: {fill: "#FFFFFF"; stroke: "#475569"; stroke-width: 2; font-size: 10}}
+  l3: "internal-RPC + JWT"      {style: {fill: "#FFFFFF"; stroke: "#166534"; stroke-width: 2; font-size: 10}}
+  l4: "HttpOnly cookie"         {style: {fill: "#FFFFFF"; stroke: "#7E22CE"; stroke-width: 2; stroke-dash: 3; font-size: 10}}
+  l5: "DB / file I/O"           {style: {fill: "#FFFFFF"; stroke: "#A21D1D"; font-size: 10}}
+  l6: "egress (внешний канал)"  {style: {fill: "#FFFFFF"; stroke: "#0F766E"; stroke-width: 2; font-size: 10}}
+  l7: "REJECT / 401-403-413"    {style: {fill: "#FFFFFF"; stroke: "#B91C1C"; stroke-width: 2; stroke-dash: 5; font-size: 10}}
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#  ACTORS / EXTERNAL
+# ══════════════════════════════════════════════════════════════════════
+USER: "Сотрудник · Browser" {
+  class: actor
+  tooltip: "Chrome/Firefox в корп. ноутбуке. Хранит access JWT в JS-памяти SPA."
+}
+
+VPN: "Корпоративный VPN" {
+  class: ext
+  tooltip: "WireGuard / IPsec туннель — обязательно для доступа к lotsman.example.com. Внешний интернет VPN не блокирует."
+}
+
+ATTACKER: "Внешний сканер" {
+  class: ext
+  tooltip: "Любой публичный IP без VPN — DNS-имени lotsman.example.com не разрешает, до :443 не доходит."
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#  HOST INTERNAL HOPS (single Compose stack)
+# ══════════════════════════════════════════════════════════════════════
+HOST: "🖥️  on-premise host" {
+  style: {fill: "#FAFBFC"; stroke: "#2D3F50"; stroke-width: 2; border-radius: 12; font-size: 13; bold: true}
+  direction: down
+
+  # ── Edge layer ────────────────────────────────────────────────────
+  EDGE_TIER: "Edge" {
+    style: {fill: "#FFF0F0"; stroke: "#7A4040"; stroke-dash: 3; border-radius: 8}
+    direction: right
+
+    NGINX: "Nginx :443" {
+      class: hop
+      width: 240; height: 70
+      tooltip: "TLS 1.2/1.3 termination · X-Forwarded-* · HSTS / X-Frame DENY / nosniff / Referrer-Policy / CSP. Дальше — plain HTTP по lotsman-edge сети."
+    }
+    NGINX_GUARDS: "Nginx guards" {
+      style: {fill: "transparent"; stroke: "#92660E"; stroke-dash: 3; border-radius: 6}
+      RL_LOGIN:   "rate-limit\nlogin 5/min/IP"   {class: guard; tooltip: "limit_req zone=login burst=2 nodelay"}
+      RL_REFRESH: "rate-limit\nrefresh 30/min"   {class: guard}
+      RL_API:     "rate-limit\napi 200/min"      {class: guard}
+      MAX_BODY:   "client_max\n_body_size 30 MB" {class: guard; tooltip: "Cap для multipart-uploads — bff проверяет ещё раз content-length"}
+    }
+  }
+
+  # ── BFF layer ─────────────────────────────────────────────────────
+  BFF_TIER: "BFF zone (lotsman-edge net)" {
+    style: {fill: "#ECF8EF"; stroke: "#166534"; stroke-dash: 3; border-radius: 8}
+
+    BFF: "web-bff :8000" {
+      class: hop
+      width: 240; height: 70
+      tooltip: "FastAPI gateway. Verify external RS256 JWT (kid + aud=lotsman-spa) → mint internal JWT (HS256 60s, aud=`target`) per request. Forward Set-Cookie. Reject если нет VPN-Origin."
+    }
+    BFF_GUARDS: "bff guards" {
+      style: {fill: "transparent"; stroke: "#92660E"; stroke-dash: 3; border-radius: 6}
+      JWT_VERIFY:    "verify Bearer\nRS256 + aud + exp"      {class: guard; tooltip: "jwt.decode(token, public_key, algorithms=['RS256'], audience='lotsman-spa', leeway=2)"}
+      HEADER_STRIP:  "strip\nX-Internal-Token"               {class: guard; tooltip: "InboundHeaderSanitiser middleware (закрывает F-008) — не даёт клиенту подсунуть свой internal JWT"}
+      INT_JWT_MINT:  "mint internal JWT\nHS256 · 60s · aud"  {class: guard; tooltip: "Per-target: 4 разных ключа INTERNAL_JWT_KEY_AUTH/REGISTRY/NOTIFICATION/AUDIT. Включает sub, role, jti."}
+    }
+  }
+
+  # ── Backend layer ─────────────────────────────────────────────────
+  BACKEND_TIER: "Backend zone (lotsman-internal net)" {
+    style: {fill: "#F5F8FB"; stroke: "#3B5A75"; stroke-dash: 3; border-radius: 8}
+    direction: down
+
+    SVC: "auth/registry/notify/audit svc" {
+      class: hop
+      width: 240; height: 70
+      tooltip: "Каждый сервис: проверяет internal JWT по СВОЕМУ ключу (отвергает чужой aud), кладёт jti в Redis SET-NX (replay protection), запускает use case."
+    }
+    SVC_GUARDS: "svc guards" {
+      style: {fill: "transparent"; stroke: "#92660E"; stroke-dash: 3; border-radius: 6}
+      INT_JWT_VERIFY: "verify internal JWT\naud-bound"                  {class: guard}
+      REPLAY_CACHE:   "Redis SET NX\njti:<aud>:<jti>"                   {class: guard; tooltip: "Замыкает F-003 — если jti виден повторно, 401 replay-detected"}
+      RBAC:           "@require_role\n(admin/editor/viewer)"            {class: guard}
+      CONTENT_LIMIT:  "Content-Length\n≤ 25 MiB (attachments / xlsx)"   {class: guard; tooltip: "Двойная защита: nginx 30 MB, bff и use-case stream-read с running counter"}
+    }
+  }
+
+  # ── Data layer ────────────────────────────────────────────────────
+  DATA_TIER: "Data zone" {
+    style: {fill: "#FBF1F1"; stroke: "#A21D1D"; stroke-dash: 3; border-radius: 8}
+    direction: down
+
+    PG: "PostgreSQL 16\nper-service role" {
+      class: store
+      tooltip: "asyncpg · scram-sha-256 auth · search_path=`svc` · GRANT scoped per schema. audit_app: REVOKE UPDATE/DELETE."
+    }
+    REDIS: "Redis 7\nsessions / streams" {
+      class: store
+      tooltip: "TLS off (intra-host) · DB 0 для kv · Streams для async events. Eventually requirepass + ACL (deferred)."
+    }
+    FILES: "файловые тома\nattachments/exports" {
+      class: store
+      tooltip: "Local FS bind-mount. HMAC-SHA256 signed URL · TTL <60s для скачивания."
+    }
+  }
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#  EXTERNAL EGRESS
+# ══════════════════════════════════════════════════════════════════════
+EGRESS: "Внешние каналы (исходящий трафик)" {
+  style: {fill: "transparent"; stroke: "#0F766E"; stroke-dash: 3; border-radius: 8}
+  direction: down
+
+  SMTP_EXT: "Корпоративный SMTP\n:587 STARTTLS" {class: ext}
+  TG_EXT:   "api.telegram.org\n:443"            {class: ext}
+  DION_EXT: "Dion API\n:443"                    {class: ext}
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#  EDGES — путь HTTPS-запроса
+# ══════════════════════════════════════════════════════════════════════
+
+# 1. Пользователь и атакующий
+USER     -> VPN: "TLS"                       {class: encrypted}
+VPN      -> HOST.EDGE_TIER.NGINX: "TLS 443"  {class: encrypted}
+ATTACKER -> HOST.EDGE_TIER.NGINX: "DNS не резолвится\n→ нет маршрута" {class: fail}
+
+# 2. Edge guards — что Nginx проверяет
+HOST.EDGE_TIER.NGINX -> HOST.EDGE_TIER.NGINX_GUARDS.RL_LOGIN
+HOST.EDGE_TIER.NGINX -> HOST.EDGE_TIER.NGINX_GUARDS.RL_REFRESH
+HOST.EDGE_TIER.NGINX -> HOST.EDGE_TIER.NGINX_GUARDS.RL_API
+HOST.EDGE_TIER.NGINX -> HOST.EDGE_TIER.NGINX_GUARDS.MAX_BODY
+
+# 3. Nginx → BFF (plain HTTP, intra-host)
+HOST.EDGE_TIER.NGINX -> HOST.BFF_TIER.BFF: "HTTP\n/api/* proxy_pass" {class: plain}
+
+# 4. BFF guards
+HOST.BFF_TIER.BFF -> HOST.BFF_TIER.BFF_GUARDS.JWT_VERIFY
+HOST.BFF_TIER.BFF -> HOST.BFF_TIER.BFF_GUARDS.HEADER_STRIP
+HOST.BFF_TIER.BFF -> HOST.BFF_TIER.BFF_GUARDS.INT_JWT_MINT
+
+# 5. BFF → backend (RPC + internal JWT)
+HOST.BFF_TIER.BFF -> HOST.BACKEND_TIER.SVC: "HTTP\n+ X-Internal-Token" {class: rpc}
+
+# 6. Backend guards
+HOST.BACKEND_TIER.SVC -> HOST.BACKEND_TIER.SVC_GUARDS.INT_JWT_VERIFY
+HOST.BACKEND_TIER.SVC -> HOST.BACKEND_TIER.SVC_GUARDS.REPLAY_CACHE
+HOST.BACKEND_TIER.SVC -> HOST.BACKEND_TIER.SVC_GUARDS.RBAC
+HOST.BACKEND_TIER.SVC -> HOST.BACKEND_TIER.SVC_GUARDS.CONTENT_LIMIT
+
+# 7. Backend → data
+HOST.BACKEND_TIER.SVC -> HOST.DATA_TIER.PG:    "asyncpg" {class: storage}
+HOST.BACKEND_TIER.SVC -> HOST.DATA_TIER.REDIS: "redis-py" {class: storage}
+HOST.BACKEND_TIER.SVC -> HOST.DATA_TIER.FILES: "aiofiles" {class: storage}
+
+# 8. Cookie back-flow (ответ к пользователю)
+HOST.BFF_TIER.BFF -> USER: "Set-Cookie refresh\nHttpOnly · Secure · SameSite=Strict\nPath=/api/v1/auth · Max-Age=604800" {class: cookie}
+
+# 9. Egress (только notification-svc)
+HOST.BACKEND_TIER.SVC -> EGRESS.SMTP_EXT: "STARTTLS · creds Fernet-encrypted" {class: egress}
+HOST.BACKEND_TIER.SVC -> EGRESS.TG_EXT:   "HTTPS · bot token in header"        {class: egress}
+HOST.BACKEND_TIER.SVC -> EGRESS.DION_EXT: "HTTPS · bearer"                     {class: egress}

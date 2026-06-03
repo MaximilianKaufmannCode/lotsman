@@ -1,0 +1,58 @@
+# .dockerignore — excludes files from Docker build context
+# Reduces image build time and prevents accidental inclusion of secrets/caches.
+
+# Git history — never needed in images
+.git
+.gitignore
+
+# Node
+node_modules
+web/node_modules
+
+# Python environments and caches
+.venv
+venv
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+coverage.xml
+htmlcov
+
+# Build artifacts
+dist
+build
+web/dist
+*.tsbuildinfo
+
+# Secrets — NEVER in build context
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+infra/secrets-dev/*
+!infra/secrets-dev/README.md
+infra/nginx/certs/
+
+
+# Documentation (exclude from service images; keep service-specific READMEs)
+docs/
+*.md
+!services/*/README.md
+
+# IDE
+.idea/
+.vscode/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Test output
+test-results/
+playwright-report/

@@ -1,0 +1,97 @@
+[project]
+name = "registry-service"
+version = "0.1.0"
+license = "BUSL-1.1"
+description = "Lotsman registry-service — assets, documents, types, export"
+requires-python = ">=3.12"
+dependencies = [
+    "lotsman-shared",
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.29,<1",
+    "alembic>=1.13,<2",
+    "sqlalchemy[asyncio]>=2.0,<3",
+    "asyncpg>=0.29",
+    "psycopg[binary]>=3.1",
+    "pydantic-settings>=2.2,<3",
+    "httpx>=0.27,<1",
+    "arq>=0.25",
+    "tenacity>=8.2,<9",
+    "structlog>=24.1,<25",
+    "prometheus-client>=0.20,<1",
+    "openpyxl>=3.1,<4",
+    "aiofiles>=23.2,<25",
+    "python-magic>=0.4.27",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "freezegun>=1.4",
+    "testcontainers[postgres]>=4",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[tool.uv.sources]
+lotsman-shared = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/registry_service"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+"src/registry_service/db/models.py" = ["E501", "UP045", "F401"]
+"src/registry_service/infrastructure/db/repositories.py" = ["E501"]
+"src/registry_service/api/v1/documents.py" = ["E501"]
+"src/registry_service/infrastructure/arq_tasks.py" = ["E501"]
+"alembic/versions/*.py" = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    # Infrastructure adapters are I/O-bound; covered by integration tests only.
+    "src/registry_service/infrastructure/db/repositories.py",
+    "src/registry_service/infrastructure/db/session.py",
+    "src/registry_service/infrastructure/arq_tasks.py",
+    "src/registry_service/infrastructure/audit_client.py",
+    "src/registry_service/infrastructure/clock.py",
+    "src/registry_service/infrastructure/mime.py",
+    "src/registry_service/infrastructure/outbox/dispatcher.py",
+    "src/registry_service/infrastructure/storage/local_filesystem.py",
+    "src/registry_service/infrastructure/storage/signed_url.py",
+    "src/registry_service/infrastructure/xlsx_exporter.py",
+    # API layer: integration/e2e scope
+    "src/registry_service/api/*",
+]
+
+[tool.coverage.report]
+fail_under = 80
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"

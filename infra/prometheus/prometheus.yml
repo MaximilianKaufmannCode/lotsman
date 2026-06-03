@@ -1,0 +1,104 @@
+# Prometheus configuration for Лоцман
+# Scrape interval: 15s (acceptable for 4-user system; reduce to 30s if cardinality grows)
+
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  scrape_timeout:      10s
+
+  external_labels:
+    environment: dev
+    product:     lotsman
+
+# Load alerting rules
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+# Alertmanager integration (configure when Alertmanager is added)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ["alertmanager:9093"]
+
+scrape_configs:
+
+  # Self-scrape
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # auth-service
+  - job_name: auth-svc
+    static_configs:
+      - targets: ["auth-svc:8000"]
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: auth-svc
+
+  # registry-service
+  - job_name: registry-svc
+    static_configs:
+      - targets: ["registry-svc:8000"]
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: registry-svc
+
+  # notification-service
+  - job_name: notification-svc
+    static_configs:
+      - targets: ["notification-svc:8000"]
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: notification-svc
+
+  # audit-service
+  - job_name: audit-svc
+    static_configs:
+      - targets: ["audit-svc:8000"]
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: audit-svc
+
+  # web-bff (gateway)
+  - job_name: web-bff
+    static_configs:
+      - targets: ["web-bff:8000"]
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: web-bff
+
+  # ── Future: postgres-exporter ────────────────────────────────────────────
+  # Uncomment and deploy wrouesnel/postgres_exporter when ready.
+  # - job_name: postgres
+  #   static_configs:
+  #     - targets: ["postgres-exporter:9187"]
+  #   relabel_configs:
+  #     - source_labels: [__address__]
+  #       target_label: instance
+  #       replacement: postgres
+
+  # ── Future: redis-exporter ───────────────────────────────────────────────
+  # Uncomment and deploy oliver006/redis_exporter when ready.
+  # - job_name: redis
+  #   static_configs:
+  #     - targets: ["redis-exporter:9121"]
+  #   relabel_configs:
+  #     - source_labels: [__address__]
+  #       target_label: instance
+  #       replacement: redis
+
+  # ── Future: nginx-exporter ───────────────────────────────────────────────
+  # Requires nginx stub_status module enabled.
+  # - job_name: nginx
+  #   static_configs:
+  #     - targets: ["nginx-exporter:9113"]

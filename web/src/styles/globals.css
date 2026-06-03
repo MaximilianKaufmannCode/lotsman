@@ -1,0 +1,195 @@
+/* SPDX-License-Identifier: BUSL-1.1
+ * Copyright (c) 2026 Maximilian Kaufmann. See LICENSE (Business Source License 1.1). */
+
+@import "tailwindcss";
+
+/* ============================================================
+   Tailwind v4 theme bridge — exposes shadcn/HSL tokens as
+   utilities (bg-background, bg-card, text-foreground, …).
+   v4 ignores tailwind.config.ts unless `@config` is used; the
+   `@theme` block below is the v4-native equivalent.
+   ============================================================ */
+
+@theme {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-status-ok: hsl(var(--status-ok));
+  --color-status-soon: hsl(var(--status-soon));
+  --color-status-overdue: hsl(var(--status-overdue));
+  --color-status-archived: hsl(var(--status-archived));
+
+  --radius: 0.5rem;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* ============================================================
+   Design tokens — materialized from the design spec
+   HSL values stored as components for Tailwind v4 / shadcn convention.
+   ============================================================ */
+
+:root {
+  /* ── Status tokens (verbatim from the design spec) ──────────────── */
+  --status-ok: 142 71% 45%;       /* green-600  — документ актуален */
+  --status-soon: 38 92% 50%;      /* amber-500  — срок < pre-notice окна */
+  --status-overdue: 0 84% 50%;    /* red-600    — просрочено */
+  --status-archived: 215 16% 47%; /* slate-500  — в архиве */
+
+  /* ── shadcn/ui neutral palette — light mode ──────────────────────────── */
+  --background: 0 0% 100%;
+  --foreground: 222 47% 11%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+
+  --primary: 221 83% 53%;
+  --primary-foreground: 210 40% 98%;
+
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222 47% 11%;
+
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+
+  --accent: 210 40% 96%;
+  --accent-foreground: 222 47% 11%;
+
+  --destructive: 0 84% 50%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --ring: 221 83% 53%;
+
+  --radius: 0.5rem;
+}
+
+[data-theme="dark"] {
+  /* ── Status tokens — dark mode (verbatim from the design spec) ─── */
+  --status-ok: 142 71% 55%;       /* green-400 */
+  --status-soon: 38 92% 60%;      /* amber-400 */
+  --status-overdue: 0 84% 60%;    /* red-400 */
+  --status-archived: 215 16% 65%; /* slate-400 */
+
+  /* ── shadcn/ui neutral palette — dark mode ────────────────────────────── */
+  --background: 222 47% 7%;
+  --foreground: 210 40% 98%;
+
+  --card: 222 47% 10%;
+  --card-foreground: 210 40% 98%;
+
+  --popover: 222 47% 10%;
+  --popover-foreground: 210 40% 98%;
+
+  --primary: 217 91% 60%;
+  --primary-foreground: 222 47% 7%;
+
+  --secondary: 217 33% 17%;
+  --secondary-foreground: 210 40% 98%;
+
+  --muted: 217 33% 17%;
+  --muted-foreground: 215 20% 65%;
+
+  --accent: 217 33% 17%;
+  --accent-foreground: 210 40% 98%;
+
+  --destructive: 0 63% 55%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 217 33% 17%;
+  --input: 217 33% 17%;
+  --ring: 217 91% 60%;
+}
+
+/* ============================================================
+   Base styles
+   ============================================================ */
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================
+   Focus-visible ring — WCAG 2.2 AA, applies to all focusable
+   ============================================================ */
+
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+/* ============================================================
+   Scrollbar styling (non-functional on a11y, purely visual)
+   ============================================================ */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* ============================================================
+   Native <select> options — dark-theme friendly.
+   v1.25.2: native <option> elements don't inherit Tailwind
+   dark-mode tokens (browsers render the dropdown popup with OS
+   defaults). Explicit bg + color here makes them readable in
+   both themes. Chrome / Firefox / Safari all respect option-
+   level CSS for background-color and color.
+   ============================================================ */
+select option,
+select optgroup {
+  background-color: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+}

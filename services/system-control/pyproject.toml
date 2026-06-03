@@ -1,0 +1,61 @@
+[project]
+name = "system-control"
+version = "0.1.0"
+license = "BUSL-1.1"
+description = "Lotsman system-control sidecar — privileged ops (restart, backup, migrate, logs, ps)"
+requires-python = ">=3.12"
+dependencies = [
+    # Shared kernel
+    "lotsman-shared",
+    # Web framework
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.29,<1",
+    # Config
+    "pydantic-settings>=2.2,<3",
+    # Observability
+    "structlog>=24.1,<25",
+    "prometheus-client>=0.20,<1",
+    # Auth crypto (internal JWT verify)
+    "pyjwt[crypto]>=2.8,<3",
+    # Docker Python SDK — for restart / ps / logs / exec without shell=True
+    "docker>=7.0,<8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[tool.uv.sources]
+lotsman-shared = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/system_control"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--cov=src --cov-report=term-missing"
+
+[tool.mypy]
+strict = true
+python_version = "3.12"

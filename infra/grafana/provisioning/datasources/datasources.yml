@@ -1,0 +1,34 @@
+# Grafana datasource provisioning for Лоцман
+# Automatically configures Prometheus and Loki on Grafana startup.
+# Changes here are applied on container restart (or hot-reload via the API).
+
+apiVersion: 1
+
+datasources:
+
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: "15s"
+      httpMethod: POST
+
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: false
+    editable: false
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        # Link request_id in Loki logs to a trace search (placeholder — update when tracing is added)
+        - name: RequestId
+          matcherRegex: '"request_id":"([^"]+)"'
+          url: ""
+          datasourceUid: ""

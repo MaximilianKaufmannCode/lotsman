@@ -1,0 +1,56 @@
+[project]
+name = "web-bff"
+version = "0.1.0"
+license = "BUSL-1.1"
+description = "Lotsman web-bff — gateway/aggregator, JWT mint, session store"
+requires-python = ">=3.12"
+dependencies = [
+    "lotsman-shared",
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.29,<1",
+    "pydantic-settings>=2.2,<3",
+    "httpx>=0.27,<1",
+    "python-multipart>=0.0.9",
+    "arq>=0.25",
+    "tenacity>=8.2,<9",
+    "structlog>=24.1,<25",
+    "prometheus-client>=0.20,<1",
+    "redis>=5.0",
+    # RS256 access JWT verification (ADR-0003 §7) — pyjwt needs cryptography
+    # for asymmetric algorithms. Was previously transitive via lotsman-shared
+    # but became missing after a dep refresh; declare explicitly to prevent
+    # «Algorithm not supported» regression on access-token verify.
+    "pyjwt[crypto]>=2.8,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "freezegun>=1.4",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[tool.uv.sources]
+lotsman-shared = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/web_bff"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["B008"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"

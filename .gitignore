@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Node / Frontend
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+.turbo/
+
+# Build artifacts
+build/
+*.local
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# OS
+.DS_Store
+Thumbs.db
+
+
+# Docker
+*.log
+
+# Playwright
+test-results/
+playwright-report/
+
+# Infra secrets and certs
+infra/secrets-dev/*
+!infra/secrets-dev/README.md
+infra/nginx/certs/*
+!infra/nginx/certs/.gitkeep
+
+# Compose override (local customizations)
+infra/compose.override.yml

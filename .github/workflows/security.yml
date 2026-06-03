@@ -1,0 +1,151 @@
+name: Nightly Security Scan
+
+on:
+  schedule:
+    # 02:00 UTC every night
+    - cron: "0 2 * * *"
+  # Allow manual trigger for ad-hoc scans
+  workflow_dispatch:
+
+jobs:
+
+  python-security:
+    name: Python security (bandit + pip-audit + semgrep)
+    runs-on: ubuntu-latest
+    if: hashFiles('services/**/*.py') != ''
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: bandit — medium+ severity static analysis
+        run: |
+          uv run bandit -r services/*/src -ll -f json \
+            -o security-bandit.json
+        continue-on-error: true  # Collect output even on findings; fail at summary step
+
+      - name: pip-audit — dependency CVE check
+        run: |
+          uvx pip-audit --strict --format json \
+            --output security-pip-audit.json
+        continue-on-error: true
+
+      - name: semgrep — OWASP Top 10 rules
+        run: |
+          uvx semgrep --config p/owasp-top-ten \
+            --json --output security-semgrep.json \
+            services/ || true
+        continue-on-error: true
+
+      - name: Upload Python security artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-python-${{ github.run_id }}
+          path: |
+            security-bandit.json
+            security-pip-audit.json
+            security-semgrep.json
+          retention-days: 90
+
+      - name: Fail on pip-audit Critical/High CVEs
+        run: |
+          if [ -f security-pip-audit.json ]; then
+            HIGH=$(python3 -c "
+          import json, sys
+          data = json.load(open('security-pip-audit.json'))
+          vulns = [v for fix in data.get('dependencies', [])
+                    for v in fix.get('vulns', [])
+                    if v.get('aliases') or v.get('id')]
+          count = len(vulns)
+          print(count)
+          sys.exit(0)
+          ")
+            echo "pip-audit found $HIGH vulnerability entries"
+            # Fail if any CVE is present — security reviews exceptions
+            python3 -c "
+          import json, sys
+          data = json.load(open('security-pip-audit.json'))
+          vulns = [v for dep in data.get('dependencies', [])
+                    for v in dep.get('vulns', [])]
+          if vulns:
+              print(f'FAIL: {len(vulns)} Python dependency vulnerabilities found — review security-pip-audit.json')
+              sys.exit(1)
+          print('OK: no Python dependency vulnerabilities found')
+          "
+          fi
+
+  node-security:
+    name: Node.js security (pnpm audit)
+    runs-on: ubuntu-latest
+    if: hashFiles('web/package.json') != ''
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm -C web install --frozen-lockfile
+
+      - name: pnpm audit — High and Critical CVEs
+        run: |
+          pnpm -C web audit --json > security-pnpm-audit.json 2>&1 || true
+          # Fail the build if any high/critical advisories exist
+          pnpm -C web audit --audit-level high
+
+      - name: Upload Node security artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-node-${{ github.run_id }}
+          path: security-pnpm-audit.json
+          retention-days: 90
+
+  secrets-scan:
+    name: Secret scan — gitleaks (full history)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full git history scan
+
+      - name: gitleaks — detect secrets in all commits
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  summary:
+    name: Security scan summary
+    runs-on: ubuntu-latest
+    needs: [python-security, node-security, secrets-scan]
+    if: always()
+
+    steps:
+      - name: Print job outcome summary
+        run: |
+          echo "## Nightly Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Python (bandit/pip-audit/semgrep) | ${{ needs.python-security.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Node.js (pnpm audit) | ${{ needs.node-security.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Secrets (gitleaks) | ${{ needs.secrets-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Scan run: ${{ github.run_id }} — artifacts retained 90 days." >> $GITHUB_STEP_SUMMARY

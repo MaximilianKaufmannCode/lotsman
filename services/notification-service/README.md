@@ -1,8 +1,8 @@
 # notification-service
 
-Manages delivery rules, schedules notifications, and dispatches messages to Email (SMTP), Telegram (Bot API), and Dion. It never polls `registry-service` over HTTP — it derives everything it needs from the event streams it consumes. When a document is created or updated, `notification-service` reacts to the event, applies the matching `DeliveryRule`, and schedules a `DeliveryAttempt`. An ARQ scheduler worker fires the attempt at the right time and handles retries.
+Manages delivery rules, schedules notifications, and dispatches reminders to Email (SMTP), Telegram (Bot API), and Dion, and publishes document deadlines to calendars — a shared Microsoft Exchange/Outlook calendar over EWS and a tokenized iCalendar (ICS) feed that any calendar app can subscribe to. It never polls `registry-service` over HTTP — it derives everything it needs from the event streams it consumes. When a document is created or updated, `notification-service` reacts to the event, applies the matching `DeliveryRule`, and schedules a `DeliveryAttempt`. An ARQ scheduler worker fires the attempt at the right time and handles retries.
 
-Provider credentials (SMTP password, Telegram bot token, Dion API key) live exclusively in this service's schema, keeping the security blast radius separate from registry data.
+Provider credentials (SMTP password, Telegram bot token, Dion API key, Exchange/EWS service account) live exclusively in this service's schema, keeping the security blast radius separate from registry data.
 
 ---
 
@@ -21,6 +21,8 @@ Provider credentials (SMTP password, Telegram bot token, Dion API key) live excl
 | GET | `/healthz` | Liveness — returns `{"status": "ok"}` |
 | GET | `/readyz` | Readiness — checks Postgres and Redis reachability |
 | GET | `/metrics` | Prometheus metrics (text format) |
+| GET | `/api/v1/calendar/feed/{token}.ics` | Public ICS feed — the token is the auth; one VEVENT + VALARM per document |
+| GET·POST·DELETE | `/api/v1/admin/calendar-subscriptions` | Calendar subscribers + automatic EWS "Reviewer" grant/revoke (ADR-0005) |
 
 Business endpoints (`/api/v1/rules`, `/api/v1/deliveries`, `/api/v1/deliveries/{id}/resend`) are implemented during `the notifications feature`.
 
@@ -127,4 +129,4 @@ The `alembic_version` table lives in the `notification` schema.
 
 ---
 
-*Last updated: 2026-05-06*
+*Last updated: 2026-06-03*

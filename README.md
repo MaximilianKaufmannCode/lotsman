@@ -10,7 +10,7 @@
 
 </div>
 
-> 🇬🇧 **English (TL;DR).** Лоцман ("Lotsman") is a **self-hosted** registry for partner-company documents (contracts, licenses, audit reports) that **tracks renewal deadlines and reminds the right people automatically** — via Email, Telegram, and Dion. It replaces a fragile shared Excel file with a multi-user, **fully audited**, **MFA-protected** app that runs entirely on your own server. The UI and user guide are in Russian. Licensed under **MPL-2.0**.
+> 🇬🇧 **English (TL;DR).** Лоцман ("Lotsman") is a **self-hosted** registry for partner-company documents (contracts, licenses, audit reports) that **tracks renewal deadlines and reminds the right people automatically** — via Email, Telegram, and Dion, and by **publishing every deadline straight into calendars**: a shared Microsoft Exchange/Outlook calendar and a personal iCalendar (ICS) subscription that works with any calendar app. It replaces a fragile shared Excel file with a multi-user, **fully audited**, **MFA-protected** app that runs entirely on your own server. The UI and user guide are in Russian. Licensed under **MPL-2.0**.
 
 ---
 
@@ -25,6 +25,7 @@
 | Боль с Excel-реестром | Как в Лоцмане |
 |---|---|
 | О сроках вспоминают постфактум | Автонапоминания: Email · Telegram · Dion |
+| Дедлайнов не видно в рабочем календаре | Сроки сами попадают в календарь: общий Exchange + персональная ICS-подписка (Outlook · Google · Apple) |
 | «Кто это поменял и когда?» | Полный аудит: кто, когда, было → стало |
 | Версии файла, конфликты правок | Многопользовательская БД — один источник правды |
 | Нет разграничения доступа | Роли admin / editor / viewer + обязательный 2FA |
@@ -34,7 +35,8 @@
 
 - 📋 **Привычно, как Excel.** Виртуализированная таблица: закреплённые шапки, цветные маркеры сроков (🔴 просрочено · 🟡 скоро · 🟢 ок), правка по двойному клику, быстрый поиск. Учиться нечему.
 - ⏰ **Сам следит за сроками.** Напоминания pre-notice / в день / повтор при просрочке, настраиваются на тип документа; уходят ответственным и подписчикам.
-- 📨 **Доставка туда, где люди.** Email (SMTP/EWS), Telegram, Dion. Опционально — синхронизация с календарём Exchange и ICS-лента.
+- 📨 **Доставка туда, где люди.** Email (SMTP/EWS), Telegram, Dion.
+- 📅 **Сроки прямо в календаре.** Дедлайны публикуются в общий календарь Microsoft Exchange (события встают рядом со встречами, срабатывают штатные напоминания Outlook) — или раздаются персональной ICS-ссылкой: её можно подписать в любом календаре (Outlook · Google · Apple), лента обновляется сама и работает, даже если Exchange недоступен.
 - 🔐 **Безопасность по умолчанию.** argon2id, обязательный TOTP (2FA) для всех ролей, короткоживущие токены, RBAC.
 - 🧾 **Ничего не теряется.** Append-only журнал аудита — каждое изменение зафиксировано.
 - 📤 **Экспорт в .xlsx.** Выгрузка текущего (отфильтрованного) вида одним кликом.

@@ -12,7 +12,7 @@ export function AppLayout() {
   const { t } = useTranslation();
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex flex-1 flex-col min-h-0">
       {/* Skip-to-content link — a11y */}
       <a
         href="#main-content"
@@ -23,7 +23,7 @@ export function AppLayout() {
 
       <Header />
 
-      <main id="main-content" className="flex-1 flex flex-col" tabIndex={-1}>
+      <main id="main-content" className="flex-1 flex flex-col min-h-0 overflow-y-auto" tabIndex={-1}>
         <Outlet />
       </main>
 

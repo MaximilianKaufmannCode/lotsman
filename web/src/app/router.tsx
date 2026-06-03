@@ -58,8 +58,8 @@ const NotFoundPage: NotFoundRouteComponent = () => (
 
 function RootShell() {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <div className="flex-1 flex flex-col">
+    <div className="flex h-dvh flex-col overflow-hidden bg-background">
+      <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
         <Outlet />
       </div>
       <Footer />

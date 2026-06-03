@@ -179,7 +179,7 @@ export function SystemLayout() {
   }, []);
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex flex-1 flex-col min-h-0">
       {/* Skip-to-content link — a11y */}
       <a
         href="#main-content"
@@ -191,7 +191,7 @@ export function SystemLayout() {
       <Header />
       <SuperAdminBanner />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden min-h-0">
         <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((c) => !c)} />
 
         <main id="main-content" className="flex-1 overflow-auto" tabIndex={-1}>

@@ -1,0 +1,74 @@
+name: Security (PR gate)
+
+# Per-PR security gate (security remediation 2026-06). Complements the nightly
+# scan in security.yml, but FAILS the PR on High/Critical findings so regressions
+# never reach main. Layers: secrets (gitleaks), deps/SCA (osv-scanner), IaC
+# (trivy config), SAST (semgrep).
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: Secrets (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Resolve the versioned linux_x64 asset (the /latest/download/ static name does not exist).
+          url=$(curl -sSfL -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
+            | grep -oE 'https://[^"]*linux_x64\.tar\.gz' | head -1)
+          curl -sSfL "$url" -o /tmp/gitleaks.tgz
+          tar -xzf /tmp/gitleaks.tgz -C /usr/local/bin gitleaks
+          gitleaks dir . --config .gitleaks.toml --redact --exit-code 1 --verbose
+
+  dependencies:
+    name: Dependency CVEs (osv-scanner)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: osv-scanner
+        run: |
+          curl -sSL -o /usr/local/bin/osv-scanner \
+            https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64
+          chmod +x /usr/local/bin/osv-scanner
+          # Non-zero exit on any non-ignored vulnerability (see osv-scanner.toml).
+          osv-scanner --config=osv-scanner.toml --lockfile=uv.lock --lockfile=web/pnpm-lock.yaml
+
+  iac:
+    name: IaC misconfig (trivy config — High/Critical)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: trivy config (High/Critical)
+        run: |
+          # Pin trivy to a known version so flag/behaviour stays stable.
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin v0.71.0
+          trivy config . --severity HIGH,CRITICAL --exit-code 1 --quiet
+
+  sast:
+    name: SAST (semgrep — ERROR severity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: semgrep
+        run: |
+          python -m pip install --quiet semgrep
+          # --error makes ERROR-severity findings fail the job; WARNING/INFO do not.
+          semgrep scan --error --severity ERROR \
+            --config p/security-audit --config p/owasp-top-ten \
+            services/ shared/ web/

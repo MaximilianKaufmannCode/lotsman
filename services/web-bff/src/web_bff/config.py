@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,6 +25,18 @@ class Settings(BaseSettings):
 
     service_name: str = Field(default="web-bff")
     log_level: str = Field(default="info")
+
+    # Security: permit the no-signature JWT fallback (dev only). Default False =
+    # fail-closed everywhere; the RS256 public key is then mandatory (see validator
+    # + deps.py). Deliberately NOT tied to LOTSMAN_ENV (which is mislabeled 'dev' in
+    # some deployments) — an explicit opt-in cannot be triggered by misconfiguration.
+    jwt_allow_unverified: bool = Field(
+        default=False,
+        description=(
+            "Dev-only opt-in. When False (default), web-bff REQUIRES jwt_public_key_path "
+            "and always verifies JWT signatures. Set True ONLY for local development."
+        ),
+    )
 
     # Redis for session keys
     redis_url: str = Field(default="redis://localhost:6379/0")
@@ -100,10 +112,25 @@ class Settings(BaseSettings):
     jwt_public_key_path: str | None = Field(
         default=None,
         description=(
-            "Path to the RS256 public key PEM. Required in production. "
-            "When absent, BFF decodes without signature verification (dev only)."
+            "Path to the RS256 public key PEM. Required outside dev. "
+            "When absent in dev ONLY, BFF decodes without signature verification."
         ),
     )
+
+    @model_validator(mode="after")
+    def _require_jwt_key_unless_dev_optin(self) -> Settings:
+        """Fail-closed: refuse to start without an RS256 public key unless the
+        explicit dev opt-in (jwt_allow_unverified=True) is set.
+
+        Prevents the unverified-JWT fallback in deps.py from ever activating due
+        to a missing/misconfigured key (which would be an authentication bypass).
+        """
+        if not self.jwt_allow_unverified and not self.jwt_public_key_path:
+            raise ValueError(
+                "jwt_public_key_path is required (fail-closed). Mount the RS256 "
+                "public key, or set JWT_ALLOW_UNVERIFIED=true for local development."
+            )
+        return self
 
 
 _settings: Settings | None = None

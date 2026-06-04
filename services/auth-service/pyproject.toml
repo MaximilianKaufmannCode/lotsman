@@ -29,7 +29,7 @@ dependencies = [
     # Auth crypto
     "argon2-cffi>=23.1,<24",
     "pyotp>=2.9,<3",
-    "cryptography>=42,<45",
+    "cryptography>=42,<47",
     "pyjwt[crypto]>=2.8,<3",
     # Redis client
     "redis[hiredis]>=5.0,<6",

@@ -85,10 +85,10 @@ def _verify_access_jwt(token: str, settings: Settings) -> AccessClaims:
     ADR-0003 §7: alg pinned to RS256, audience 'lotsman-spa', issuer 'lotsman-auth'.
     Required claims: exp, iat, nbf, sub, aud, iss, jti, sid, role.
 
-    For now this performs a structural decode only (no signature verification)
-    when JWT_PUBLIC_KEY_PATH is not configured — this is intentional for the
-    scaffold stage. Signature verification is wired once the key-pair is
-    mounted in compose (ops follow-up per ADR-0003 §7).
+    Fail-closed: signature verification with the mounted RS256 public key is
+    mandatory by default. The unverified structural decode is permitted ONLY
+    when jwt_allow_unverified=True (Settings also rejects a missing key at
+    startup unless that opt-in is set, per config.py validator).
     """
     import jwt  # type: ignore[import]
 
@@ -112,12 +112,18 @@ def _verify_access_jwt(token: str, settings: Settings) -> AccessClaims:
         except Exception as exc:
             raise jwt.InvalidTokenError(str(exc)) from exc
     else:
-        # Key file not mounted yet: decode without verification.
-        # This is acceptable in development ONLY. Production startup will fail
-        # because Settings.jwt_public_key_path will be required.
+        # No public key configured. Permit the unverified decode ONLY when the
+        # explicit dev opt-in is set; otherwise fail-closed (Settings also rejects
+        # this at startup, so in practice this guard is defence-in-depth).
+        if not getattr(settings, "jwt_allow_unverified", False):
+            raise jwt.InvalidTokenError(
+                "JWT public key not configured; refusing to accept an unverified "
+                "token (set JWT_ALLOW_UNVERIFIED=true for local development)."
+            )
         decoded = jwt.decode(
             token,
-            options={"verify_signature": False},
+            # nosemgrep  (dev-only, guarded by jwt_allow_unverified + fail-closed Settings)
+            options={"verify_signature": False},  # nosemgrep
             algorithms=["RS256"],
         )
 

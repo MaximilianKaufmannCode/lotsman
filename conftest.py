@@ -20,6 +20,11 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/
 os.environ.setdefault("INTERNAL_JWT_SECRET", "test-secret-unit-tests-only")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
+# web-bff fail-closed JWT verification (security remediation 2026-06): unit tests
+# run with the dev opt-in so Settings() can be built without a real RS256 key.
+# Production leaves this false (default) — see web_bff.config.Settings validator.
+os.environ.setdefault("JWT_ALLOW_UNVERIFIED", "true")
+
 # notification-service: Fernet key for channel-config encryption (ADR-0004 §4).
 # This is a fixed test-only key and MUST NOT be used in production.
 os.environ.setdefault("CHANNEL_ENC_KEY", "WU7sIwVKKiRXzwyhhAbQYniTw0zisc1XnaEaQ1FiwIk=")

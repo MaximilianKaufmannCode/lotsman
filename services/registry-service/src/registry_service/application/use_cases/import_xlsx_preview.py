@@ -9,9 +9,7 @@ stores parsed rows in Redis (gzipped), and returns the preview with session ID.
 
 from __future__ import annotations
 
-import gzip
 import io
-import pickle
 import unicodedata
 import uuid
 from dataclasses import dataclass
@@ -19,6 +17,7 @@ from datetime import date, datetime
 from typing import Any
 
 from registry_service.application.dto import ColumnInfo, ImportPreviewDTO
+from registry_service.application.import_session_codec import dumps_session
 from registry_service.application.ports import Clock, DocumentTypeRepository, EventOutbox
 from registry_service.domain.errors import RequiredFieldMissingError
 from registry_service.domain.events import ImportPreviewStarted
@@ -238,9 +237,9 @@ class ImportXlsxPreview:
         )
 
     async def _store_session(self, session_id: str, data: dict[str, Any]) -> None:
-        """Persist session data to Redis as gzipped pickle."""
+        """Persist session data to Redis as gzipped msgpack (no pickle — CWE-502)."""
         import redis.asyncio as aioredis
 
-        compressed = gzip.compress(pickle.dumps(data), compresslevel=6)
+        compressed = dumps_session(data)
         async with aioredis.from_url(self.redis_url) as r:  # type: ignore[no-untyped-call]
             await r.set(f"import:session:{session_id}", compressed, ex=_SESSION_TTL)

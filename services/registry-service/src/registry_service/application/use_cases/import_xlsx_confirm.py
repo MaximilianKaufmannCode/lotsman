@@ -9,8 +9,6 @@ Loads the import session from Redis, applies user decisions for unknown columns
 
 from __future__ import annotations
 
-import gzip
-import pickle
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -23,6 +21,7 @@ from registry_service.application.dto import (
     ImportRowError,
     UpdateCustomFieldSchemaCommand,
 )
+from registry_service.application.import_session_codec import loads_session
 from registry_service.application.ports import (
     AssetRepository,
     Clock,
@@ -486,7 +485,9 @@ class ImportXlsxConfirm:
         if raw is None:
             raise ImportSessionNotFoundError(f"Import session '{session_id}' not found")
         try:
-            data: dict[str, Any] = pickle.loads(gzip.decompress(raw))  # noqa: S301
+            # gzipped msgpack; transparently dual-reads legacy pickle sessions
+            # written by the previous version (see import_session_codec).
+            data: dict[str, Any] = loads_session(raw)
             return data
         except Exception as exc:
             raise ImportSessionExpiredError(

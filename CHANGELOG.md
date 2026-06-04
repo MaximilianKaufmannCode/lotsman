@@ -7,6 +7,14 @@ Versioning policy: see [CONTRIBUTING.md](CONTRIBUTING.md#versioning).
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-06-04
+
+### Changed
+- **Лицензия — переход с MPL-2.0 на Business Source License 1.1 (BUSL-1.1).** Лоцман теперь **source-available** (не OSI-open-source). Production-использование разрешено **кроме** предложения Лоцмана третьим лицам как конкурирующего хостинг-сервиса или коммерческого продукта (Additional Use Grant). Каждая версия автоматически переходит под **MPL-2.0** через 4 года после выпуска (Change Date; для 2.0.0 — 2030-06-04). Обновлены `LICENSE`, заголовки всех исходников (SPDX `BUSL-1.1`, 629 файлов), метаданные `package.json` и `pyproject.toml`, README и CONTRIBUTING; прежний текст MPL-2.0 сохранён как `LICENSE-MPL-2.0.txt` (он же — будущая Change License). Пояснение — [LICENSING.md](LICENSING.md).
+- **Версии ≤ 1.29.9 остаются доступными под MPL-2.0** — релицензирование действует начиная с 2.0.0.
+
+> Релиз только смены лицензии — функциональных изменений кода нет.
+
 ## [1.29.9] — 2026-06-03
 
 ### Added

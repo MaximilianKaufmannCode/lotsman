@@ -135,3 +135,17 @@ See the [ADR index](docs/adr/README.md).
   provided templates.
 - **Security vulnerabilities** — do **not** open a public issue; follow
   [SECURITY.md](SECURITY.md).
+
+## License
+
+Лоцман is distributed under the **Business Source License 1.1** (BUSL-1.1) — a
+**source-available** license, not an OSI-approved open-source license. Each
+version converts to the **Mozilla Public License 2.0** four years after its
+release. See [LICENSE](LICENSE) and [LICENSING.md](LICENSING.md).
+
+By submitting a contribution (for example, a pull request) you certify that you
+have the right to do so, and you agree that your contribution is licensed to the
+project and its users under the **same terms as the Licensed Work** (BUSL-1.1,
+converting to MPL-2.0 on the Change Date), and that the Licensor (Maximilian
+Kaufmann) may set the Change Date and Change License for it. Contributions made
+before v2.0.0 were accepted under MPL-2.0.

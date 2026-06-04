@@ -1,6 +1,6 @@
 {
   "name": "@lotsman/web",
-  "version": "1.29.9",
+  "version": "2.0.0",
   "license": "BUSL-1.1",
   "private": true,
   "type": "module",

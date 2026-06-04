@@ -21,9 +21,15 @@ jobs:
         with:
           fetch-depth: 0
       - name: gitleaks
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -sSL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_linux_x64.tar.gz \
-            | tar -xz -C /usr/local/bin gitleaks
+          # Resolve the versioned linux_x64 asset (the /latest/download/ static name does not exist).
+          url=$(curl -sSfL -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
+            | grep -oE 'https://[^"]*linux_x64\.tar\.gz' | head -1)
+          curl -sSfL "$url" -o /tmp/gitleaks.tgz
+          tar -xzf /tmp/gitleaks.tgz -C /usr/local/bin gitleaks
           gitleaks dir . --config .gitleaks.toml --redact --exit-code 1 --verbose
 
   dependencies:
@@ -44,13 +50,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: config
-          scan-ref: .
-          severity: CRITICAL,HIGH
-          exit-code: "1"
-          ignore-unfixed: "false"
+      - name: trivy config (High/Critical)
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin
+          trivy config . --severity CRITICAL,HIGH --exit-code 1 --no-progress
 
   sast:
     name: SAST (semgrep — ERROR severity)

@@ -310,8 +310,12 @@ class SqlaCalendarSubscriptionRepository:
         if share_granted_at is not None:
             sets.append("share_granted_at = :share_granted_at")
             params["share_granted_at"] = share_granted_at
+        # Reviewed (security remediation 2026-06): no SQL injection. The only
+        # concatenated fragments (`sets`) are static, developer-defined column
+        # assignments; ALL values are bound parameters (:share_status, :user_id, …),
+        # never user input. Kept as text() for the dynamic SET clause.
         await self._session.execute(
-            text(
+            text(  # nosemgrep  (reviewed: parameterised values, static column fragments)
                 "UPDATE notification.calendar_subscriptions SET "
                 + ", ".join(sets)
                 + " WHERE user_id = :user_id"

@@ -1,0 +1,18 @@
+# Лоцман gitleaks config — extends defaults, allowlists known non-secrets so that
+# real leaks are not lost in false-positive noise (security remediation 2026-06).
+title = "lotsman gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures and migration revision identifiers (verified non-secrets)"
+paths = [
+  '''.*/tests/.*''',
+  '''(^|/)conftest\.py$''',
+]
+# Alembic migration revision identifiers, e.g. "0007_key_rotations", match the
+# generic-api-key entropy heuristic but are not secrets.
+regexes = [
+  '''^[0-9]{4}_[a-z0-9_]+$''',
+]

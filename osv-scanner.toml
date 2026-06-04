@@ -1,0 +1,19 @@
+# osv-scanner ignore list (security remediation 2026-06).
+# Only tracked, deliberately-deferred advisories belong here — everything else
+# must fail the PR security gate.
+
+# starlette 0.52.1 -> 1.0.x is a MAJOR migration coupled with FastAPI; deferred
+# to Wave 2 with dedicated regression testing. Advisory is DoS-class (not RCE).
+# Remove once Wave 2 lands. (PYSEC-2026-161 is an alias of this GHSA.)
+[[IgnoredVulns]]
+id = "GHSA-86qp-5c8j-p5mr"
+reason = "starlette major upgrade deferred to Wave 2 (FastAPI/starlette 1.0 migration); DoS-class."
+
+# vitest 3.x -> 4.x is a MAJOR upgrade of a DEV/TEST-only dependency. vitest is
+# NOT shipped in the production web runtime image (the web image serves only the
+# built static assets via nginx — no node_modules), so this does not affect the
+# deployed attack surface. Major test-runner upgrade deferred to a tracked
+# frontend-tooling follow-up. Remove once vitest is upgraded.
+[[IgnoredVulns]]
+id = "GHSA-5xrq-8626-4rwp"
+reason = "vitest is a dev/test-only dependency, absent from the production runtime image; major v3->v4 upgrade deferred."

@@ -7,6 +7,19 @@ Versioning policy: see [CONTRIBUTING.md](CONTRIBUTING.md#versioning).
 
 ## [Unreleased]
 
+## [2.0.1] — 2026-06-04
+
+### Security
+- **web-bff: верификация access-JWT теперь fail-closed.** Подпись RS256 проверяется всегда; без публичного ключа сервис не стартует, если явно не задан dev-opt-in `JWT_ALLOW_UNVERIFIED=true`. Раньше при отсутствии ключа токен декодировался без проверки подписи — потенциальный обход аутентификации при мисконфигурации (CWE-287/303).
+- **registry: импорт-сессии xlsx в Redis — msgpack вместо pickle.** Убран риск выполнения кода при десериализации недоверенных данных (CWE-502). Точность типов (Decimal/datetime/date/time/unicode) сохраняется; на один релиз оставлено чтение legacy-pickle (dual-read).
+- **Обновлены уязвимые зависимости (SCA):** `cryptography` 44.0.3 → 46.0.7, `PyJWT` 2.12.1 → 2.13.0, `urllib3` 2.6.3 → 2.7.0, `idna` 3.13 → 3.18, `ws` (web) 8.20.0 → 8.21.0. `starlette`→1.0 (мажор) и `vitest`→4 (dev-only) отложены и отслеживаются.
+- **nginx:** security-заголовки сохраняются во всех `location` (replace-семантика `add_header`); HTTP→HTTPS-редирект через `$server_name` вместо клиентского `$host` (анти host-header/open-redirect).
+
+### Added
+- Per-PR security-гейт в CI (gitleaks/osv-scanner/trivy-config/semgrep, fail на High/Critical) + `HEALTHCHECK` во всех Docker-образах.
+
+> Контракты между сервисами и публичный API не менялись — PATCH согласно [политике версионирования](CONTRIBUTING.md#versioning).
+
 ## [2.0.0] — 2026-06-04
 
 ### Changed

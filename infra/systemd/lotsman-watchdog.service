@@ -1,0 +1,9 @@
+[Unit]
+Description=Лоцман pod watchdog (idempotent re-start if the pod is down)
+After=lotsman.service
+# Do not run while a graceful stop is in progress.
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/lotsman/scripts/lotsman-pod-up.sh

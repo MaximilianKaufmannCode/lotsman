@@ -1,0 +1,18 @@
+[Unit]
+Description=Лоцман PreProd observability (prometheus + node_exporter, standalone containers)
+# prometheus/node_exporter are NOT members of pod_lotsman (separate compose project),
+# so `podman pod start pod_lotsman` does not cover them — this sibling unit does.
+After=lotsman.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=90
+ExecStart=/usr/bin/podman start lotsman_prometheus lotsman_node_exporter
+ExecStop=-/usr/bin/podman stop -t 30 lotsman_prometheus lotsman_node_exporter
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

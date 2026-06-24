@@ -1,0 +1,7 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Лоцман — ежедневный валидируемый pg_dumpall в 03:00 (Europe/Moscow). Хранение 14 дней.
+# Скрипт сам валидирует дамп (размер/контент/gzip) и атомарно публикует; пустые дампы больше не сохраняются.
+# Внешний dead-man для пейджинга при сбое: задайте реальный URL (healthchecks.io и т.п.) и раскомментируйте.
+#LOTSMAN_BACKUP_HC_URL=https://hc-ping.com/REPLACE-WITH-REAL-UUID
+0 3 * * * root /opt/lotsman/scripts/backup-pg.sh >> /var/log/lotsman-backup.log 2>&1

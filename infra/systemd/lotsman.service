@@ -1,0 +1,27 @@
+[Unit]
+Description=Лоцман PreProd pod (podman pod_lotsman)
+Documentation=file:/opt/lotsman/Lotsman/README-ops.md
+Wants=network-online.target podman.socket
+After=network-online.target podman.socket
+# Order before host nginx so the API upstream exists when nginx starts (narrows the
+# boot-time 502 window). This is ordering-only, not a hard requirement: if the pod
+# fails to come up, nginx still starts and serves the static SPA.
+Before=nginx.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=120
+TimeoutStopSec=180
+# Recreate the /run/docker.sock symlink each start (tmpfiles also does this at boot).
+ExecStartPre=-/usr/bin/systemd-tmpfiles --create /etc/tmpfiles.d/lotsman-docker-sock.conf
+ExecStart=/opt/lotsman/scripts/lotsman-pod-up.sh
+# Graceful stop: checkpoint postgres (fast mode) BEFORE pod stop, so a planned stop
+# never leaves an unclean cluster. The leading '-' makes the pg_ctl step non-fatal.
+ExecStop=-/usr/bin/podman exec lotsman_postgres pg_ctl -D /var/lib/postgresql/data stop -m fast -t 90
+ExecStop=/usr/bin/podman pod stop -t 120 pod_lotsman
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

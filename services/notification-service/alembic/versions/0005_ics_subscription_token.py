@@ -10,7 +10,7 @@ subscription and serves the same set of registry events that EWS would
 have written to the shared mailbox.
 
 Revision ID: 0005
-Revises: 0004
+Revises: 0004_calendar_subscription_share_status
 Create Date: 2026-05-14
 """
 
@@ -19,7 +19,7 @@ from __future__ import annotations
 from alembic import op
 
 revision = "0005"
-down_revision = "0004"
+down_revision = "0004_calendar_subscription_share_status"
 branch_labels = None
 depends_on = None
 

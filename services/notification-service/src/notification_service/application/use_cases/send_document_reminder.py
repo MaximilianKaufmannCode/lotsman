@@ -34,12 +34,13 @@ from notification_service.db.models import DeliveryAttempt, MessageTemplate
 from notification_service.infrastructure.db.repositories import SqlaCredentialRepository
 from notification_service.infrastructure.email_html import (
     render_markdown_subset,
-    wrap_branded,
+    render_notification_email,
 )
 from notification_service.infrastructure.http.auth_gateway import HttpAuthGateway
 from notification_service.infrastructure.http.registry_gateway import (
     HttpRegistryDocumentGateway,
 )
+from notification_service.infrastructure.humanize import days_phrase, format_date_ru
 from notification_service.infrastructure.metrics import (
     EMAIL_REMINDERS_TOTAL,
     EMAIL_SEND_DURATION,
@@ -196,14 +197,19 @@ class SendDocumentReminder:
             except ValueError:
                 pass
 
+        expiry_human = format_date_ru(expiry_iso)
         variables: dict[str, Any] = {
             "full_name": user.get("full_name") or user.get("email"),
             "document_number": document.get("number") or "—",
             "document_type": (doc_type or {}).get("display_name", type_code or "—"),
             "asset_name": document.get("asset_name") or "—",
             "expiry_date": expiry_iso,
+            # Human-readable extras (used by the redesigned templates).
+            "expiry_human": expiry_human or expiry_iso or "—",
             "days_left": days_left,
             "days_overdue": days_overdue,
+            "days_left_phrase": days_phrase(days_left),
+            "days_overdue_phrase": days_phrase(days_overdue),
             "responsible_name": user.get("full_name") or "—",
             "document_url": f"{self.web_bff_base_url}/registry?document_id={document_id}",
         }
@@ -223,14 +229,47 @@ class SendDocumentReminder:
             )
             return "failed"
 
-        # 7a. Build HTML body from the rendered markdown subset, then wrap in
-        #     the branded Лоцман email shell. The plain-text variant strips
-        #     simple **bold** markers so text-only clients see clean text.
-        body_html = wrap_branded(
+        # 7a. Build the structured, branded HTML email: status accent + an
+        #     at-a-glance details block + a single CTA. Plain text mirrors it.
+        status_map = {"pre_notice": "soon", "in_day": "today", "overdue": "overdue"}
+        status = status_map.get(template_code, "info")
+        if template_code == "overdue":
+            headline = f"Документ просрочен на {variables['days_overdue_phrase']}"
+            remaining_label, remaining_value = "Просрочено", variables["days_overdue_phrase"]
+        elif template_code == "in_day":
+            headline = "Срок актуализации — сегодня"
+            remaining_label, remaining_value = "Статус", "истекает сегодня"
+        else:
+            headline = f"Срок актуализации через {variables['days_left_phrase']}"
+            remaining_label, remaining_value = "Осталось", variables["days_left_phrase"]
+
+        details = [
+            ("Компания", variables["asset_name"]),
+            ("Тип документа", variables["document_type"]),
+            ("№ документа", variables["document_number"]),
+            ("Срок действия", variables["expiry_human"]),
+            (remaining_label, remaining_value),
+            ("Ответственный", variables["responsible_name"]),
+        ]
+        settings_url = f"{self.web_bff_base_url}/profile"
+        body_html = render_notification_email(
             subject=subject,
-            body_html=render_markdown_subset(body_md),
+            headline=headline,
+            intro_html=render_markdown_subset(body_md),
+            details=details,
+            cta_url=variables["document_url"],
+            settings_url=settings_url,
+            status=status,
         )
-        body_text = body_md.replace("**", "")
+        # Plain-text parity: headline + intro + key facts + link.
+        detail_lines = "\n".join(
+            f"{label}: {value}" for label, value in details if value and value != "—"
+        )
+        body_text = (
+            f"{headline}\n\n{body_md.replace('**', '')}\n\n{detail_lines}\n\n"
+            f"Открыть документ:\n{variables['document_url']}\n\n"
+            f"Настроить уведомления: {settings_url}\n\n— Лоцман"
+        )
         subject = subject.replace("**", "")
 
         # 8. Insert delivery_attempts row (pending) — must come before send to

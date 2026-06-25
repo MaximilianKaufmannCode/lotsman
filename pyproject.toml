@@ -44,6 +44,8 @@ ignore = [
 "services/registry-service/alembic/versions/*.py" = ["E501"]
 "services/notification-service/alembic/versions/*.py" = ["E501"]
 "services/audit-service/alembic/versions/*.py" = ["E501"]
+# HTML email template — long inline-CSS string literals are inherent here
+"services/notification-service/src/notification_service/infrastructure/email_html.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

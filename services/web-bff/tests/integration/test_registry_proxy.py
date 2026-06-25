@@ -189,14 +189,19 @@ def test_viewer_can_list_document_types(client):
 # ---------------------------------------------------------------------------
 
 
-def test_editor_cannot_create_asset(client):
-    """POST /api/v1/assets with editor JWT returns 403."""
+def test_editor_can_create_asset(client):
+    """POST /api/v1/assets with editor JWT is NOT forbidden (issue #5).
+
+    Editors may create companies (inline creation from the document form); the
+    BFF role gate must let them through. Without a real registry-service the
+    request fails downstream (401 in test env / 502/503), but must NOT be 403.
+    """
     resp = client.post(
         "/api/v1/assets",
         json={"name": "ООО Тест", "inn": None, "notes": None},
         headers={"Authorization": f"Bearer {_make_access_jwt('editor')}"},
     )
-    assert resp.status_code in (401, 403)
+    assert resp.status_code != 403
 
 
 def test_editor_cannot_archive_asset(client):

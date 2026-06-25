@@ -10,17 +10,22 @@
  */
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useAuth } from "@/features/auth/AuthProvider";
-import { useActiveAssets } from "@/features/registry/hooks/useAssets";
+import { useActiveAssets, useCreateAsset } from "@/features/registry/hooks/useAssets";
 import { useCreateDocument } from "@/features/registry/hooks/useDocumentMutations";
-import { useDocumentTypes } from "@/features/registry/hooks/useDocumentTypes";
+import {
+  useCreateDocumentType,
+  useDocumentTypes,
+} from "@/features/registry/hooks/useDocumentTypes";
+import { AssetDialog } from "@/pages/admin/assets/components/AssetDialog";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { QuickTypeDialog } from "./QuickTypeDialog";
 
 // ── Schema ─────────────────────────────────────────────────────────────────────
 
@@ -51,12 +56,22 @@ export function DocumentCreateDialog({ open, onClose }: DocumentCreateDialogProp
   const { data: assetsData, isLoading: assetsLoading } = useActiveAssets();
   const { data: docTypes, isLoading: typesLoading } = useDocumentTypes();
   const createMutation = useCreateDocument();
+  const createAssetMutation = useCreateAsset();
+  const createTypeMutation = useCreateDocumentType();
+
+  // Inline creation (issue #5): companies — editor+admin; types — admin only.
+  const [companyDialogOpen, setCompanyDialogOpen] = React.useState(false);
+  const [typeDialogOpen, setTypeDialogOpen] = React.useState(false);
+  const canCreateCompany = claims?.role === "admin" || claims?.role === "editor";
+  const canCreateType = claims?.role === "admin";
+  const nestedOpen = companyDialogOpen || typeDialogOpen;
 
   const {
     register,
     handleSubmit,
     watch,
     reset,
+    setValue,
     formState: { errors, isSubmitting, isValid },
   } = useForm<CreateDocFormValues>({
     resolver: zodResolver(createDocSchema),
@@ -95,13 +110,16 @@ export function DocumentCreateDialog({ open, onClose }: DocumentCreateDialogProp
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // A nested create-dialog (company/type) handles its own Esc — don't
+        // close the document form underneath it.
+        if (nestedOpen) return;
         reset();
         onClose();
       }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [open, onClose, reset]);
+  }, [open, onClose, reset, nestedOpen]);
 
   const onSubmit = handleSubmit(async (values) => {
     await createMutation.mutateAsync({
@@ -128,6 +146,7 @@ export function DocumentCreateDialog({ open, onClose }: DocumentCreateDialogProp
         className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
         aria-hidden="true"
         onClick={() => {
+          if (nestedOpen) return;
           reset();
           onClose();
         }}
@@ -200,6 +219,17 @@ export function DocumentCreateDialog({ open, onClose }: DocumentCreateDialogProp
             </select>
           </FormField>
 
+          {canCreateCompany && (
+            <button
+              type="button"
+              onClick={() => setCompanyDialogOpen(true)}
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+            >
+              <Plus className="size-3.5" aria-hidden />
+              Создать компанию
+            </button>
+          )}
+
           {/* Тип документа */}
           <FormField label="Тип документа *" error={errors.type_code?.message}>
             <select
@@ -222,6 +252,17 @@ export function DocumentCreateDialog({ open, onClose }: DocumentCreateDialogProp
               ))}
             </select>
           </FormField>
+
+          {canCreateType && (
+            <button
+              type="button"
+              onClick={() => setTypeDialogOpen(true)}
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+            >
+              <Plus className="size-3.5" aria-hidden />
+              Создать тип документа
+            </button>
+          )}
 
           {/* Pre-notice info */}
           {selectedType && (
@@ -265,19 +306,6 @@ export function DocumentCreateDialog({ open, onClose }: DocumentCreateDialogProp
             />
           </FormField>
 
-          {/* Admin-only asset create hint */}
-          {claims?.role === "admin" && (
-            <p className="text-xs text-muted-foreground">
-              Компания не найдена?{" "}
-              <a
-                href="/admin/assets"
-                className="text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
-              >
-                Добавить компанию
-              </a>
-            </p>
-          )}
-
           {/* Actions */}
           <div className="flex gap-2 pt-2">
             <Button type="submit" disabled={isSubmitting || createMutation.isPending || !isValid}>
@@ -296,6 +324,27 @@ export function DocumentCreateDialog({ open, onClose }: DocumentCreateDialogProp
           </div>
         </form>
       </div>
+
+      {/* Inline creation overlays (issue #5) — the document form is preserved underneath.
+          On success the new item is auto-selected, closing the loop without context loss. */}
+      <AssetDialog
+        open={companyDialogOpen}
+        onClose={() => setCompanyDialogOpen(false)}
+        onSubmit={async (values) => {
+          const asset = await createAssetMutation.mutateAsync(values);
+          setValue("asset_id", asset.id, { shouldValidate: true });
+        }}
+      />
+      {canCreateType && (
+        <QuickTypeDialog
+          open={typeDialogOpen}
+          onClose={() => setTypeDialogOpen(false)}
+          onSubmit={async (payload) => {
+            const docType = await createTypeMutation.mutateAsync(payload);
+            setValue("type_code", docType.code, { shouldValidate: true });
+          }}
+        />
+      )}
     </>
   );
 }

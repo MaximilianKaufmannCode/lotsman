@@ -120,11 +120,11 @@ describe("DocumentCreateDialog — required fields gate", () => {
 
     // Wait for selects to be rendered
     await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: /Контрагент/i })).toBeTruthy();
+      expect(screen.getByRole("combobox", { name: /Компания/i })).toBeTruthy();
     });
 
     // Fill required fields: asset, type, number
-    const assetSelect = screen.getByRole("combobox", { name: /Контрагент/i });
+    const assetSelect = screen.getByRole("combobox", { name: /Компания/i });
     const typeSelect = screen.getByRole("combobox", { name: /Тип документа/i });
     const numberInput = screen.getByRole("textbox", { name: /№|Номер/i });
 
@@ -146,11 +146,11 @@ describe("DocumentCreateDialog — required fields gate", () => {
     await renderDialog();
 
     await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: /Контрагент/i })).toBeTruthy();
+      expect(screen.getByRole("combobox", { name: /Компания/i })).toBeTruthy();
     });
 
     // Fill asset + type but leave number blank
-    const assetSelect = screen.getByRole("combobox", { name: /Контрагент/i });
+    const assetSelect = screen.getByRole("combobox", { name: /Компания/i });
     const typeSelect = screen.getByRole("combobox", { name: /Тип документа/i });
 
     await user.selectOptions(assetSelect, "a-001");
@@ -227,10 +227,10 @@ describe("DocumentCreateDialog — submit payload", () => {
     await renderDialog(true, onClose);
 
     await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: /Контрагент/i })).toBeTruthy();
+      expect(screen.getByRole("combobox", { name: /Компания/i })).toBeTruthy();
     });
 
-    const assetSelect = screen.getByRole("combobox", { name: /Контрагент/i });
+    const assetSelect = screen.getByRole("combobox", { name: /Компания/i });
     const typeSelect = screen.getByRole("combobox", { name: /Тип документа/i });
     const numberInput = screen.getByRole("textbox", { name: /№|Номер/i });
 

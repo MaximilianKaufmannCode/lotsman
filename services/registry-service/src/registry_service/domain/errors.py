@@ -124,7 +124,7 @@ class ExportJobExpiredError(RegistryDomainError):
 
 class AssetAlreadyExistsError(RegistryDomainError):
     status_code = 409
-    default_message = "Контрагент с таким названием уже существует"
+    default_message = "Компания с таким названием уже существует"
 
 
 class InvalidAssetStatusError(RegistryDomainError):

@@ -402,7 +402,7 @@ Create a partner company.
 **Response 201** — created `Asset` object.
 
 **Errors:**
-- `409` — duplicate name among active assets (`"Контрагент с таким названием уже существует"`).
+- `409` — duplicate name among active assets (`"Компания с таким названием уже существует"`).
 - `422` — invalid INN format.
 
 **Audit event emitted:** `registry.asset.created.v1`

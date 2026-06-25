@@ -600,10 +600,10 @@ export function FilterSheet({
             </div>
           </AccordionGroup>
 
-          {/* Group: Контрагент */}
+          {/* Group: Компания */}
           <AccordionGroup
             id="asset"
-            label="Контрагент"
+            label="Компания"
             open={openGroups.includes("asset")}
             onToggle={() => toggleGroup("asset")}
             conditionCount={groupConditionCount([

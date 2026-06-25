@@ -78,7 +78,7 @@ type DrawerTab = "main" | "attachments" | "history";
  * release; users can still be assigned via «Я» / «Не назначен» / «Без изменений».
  */
 const editSchema = z.object({
-  asset_id: z.string().min(1, "Выберите контрагента"),
+  asset_id: z.string().min(1, "Выберите компанию"),
   type_code: z.string().min(1, "Выберите тип документа"),
   number: z.string().min(1, "Обязательное поле"),
   issue_date: z.string().nullable().optional(),
@@ -518,7 +518,7 @@ function MainTab({
             <p className="text-sm text-muted-foreground">Загрузка справочников…</p>
           )}
 
-          <Field label="Контрагент" error={errors.asset_id?.message}>
+          <Field label="Компания" error={errors.asset_id?.message}>
             <select
               {...register("asset_id")}
               className={cn(
@@ -644,7 +644,7 @@ function MainTab({
         </form>
       ) : (
         <dl className="space-y-3">
-          <DetailRow label="Контрагент" value={doc.asset_name} />
+          <DetailRow label="Компания" value={doc.asset_name} />
           <DetailRow label="Тип" value={doc.type_display_name} />
           <DetailRow label="№ документа" value={doc.number} mono />
           <DetailRow
@@ -970,7 +970,7 @@ const FIELD_LABEL_RU: Record<string, string> = {
   responsible_user_id: "Ответственный",
   notes: "Заметки",
   type_code: "Тип документа",
-  asset_id: "Контрагент",
+  asset_id: "Компания",
   custom_field_values: "Дополнительные поля",
 };
 

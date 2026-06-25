@@ -93,8 +93,8 @@ export function FKAssetFilterPopover({
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Найти контрагента..."
-          aria-label="Поиск контрагента"
+          placeholder="Найти компанию..."
+          aria-label="Поиск компании"
           className="pl-6 text-xs h-8"
         />
       </div>
@@ -102,7 +102,7 @@ export function FKAssetFilterPopover({
       <div
         role="listbox"
         aria-multiselectable="true"
-        aria-label="Контрагенты"
+        aria-label="Компании"
         className="space-y-0.5 max-h-48 overflow-y-auto"
       >
         {isLoading && (

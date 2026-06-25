@@ -5,7 +5,7 @@
 
 Role requirements:
   - GET:    any authenticated actor
-  - POST:   admin only
+  - POST:   editor or admin (inline company creation from the document form)
   - PATCH:  admin only
   - DELETE (archive): admin only
 """
@@ -21,6 +21,7 @@ from registry_service.api.deps import (
     DbSession,
     Pagination,
     RequireAdmin,
+    RequireEditor,
     get_clock,
     get_request_id,
 )
@@ -75,9 +76,12 @@ async def list_assets(
 async def create_asset(
     body: AssetCreateRequest,
     session: DbSession,
-    admin: RequireAdmin,
+    actor: RequireEditor,
     request: Request,
 ) -> AssetResponse:
+    # Editors (and admins) may create companies — supports inline creation
+    # directly from the document-creation form (issue #5). Editing/archiving
+    # remains admin-only.
     async with session.begin():
         repo = SqlAssetRepository(session)
         outbox = SqlEventOutbox(session)
@@ -88,7 +92,7 @@ async def create_asset(
                 name=body.name,
                 inn=body.inn,
                 notes=body.notes,
-                actor_id=admin.actor_id,
+                actor_id=actor.actor_id,
                 request_id=get_request_id(request),
             )
         )

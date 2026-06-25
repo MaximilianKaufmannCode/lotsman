@@ -42,6 +42,7 @@ vi.mock("@/features/registry/hooks/useAssets", () => ({
     },
     isLoading: false,
   })),
+  useCreateAsset: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
 }));
 
 vi.mock("@/features/registry/hooks/useDocumentTypes", () => ({
@@ -66,6 +67,7 @@ vi.mock("@/features/registry/hooks/useDocumentTypes", () => ({
     ],
     isLoading: false,
   })),
+  useCreateDocumentType: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
 }));
 
 vi.mock("@/features/registry/hooks/useDocumentMutations", () => ({

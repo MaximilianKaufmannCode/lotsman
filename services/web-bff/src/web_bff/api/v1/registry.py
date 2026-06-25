@@ -14,7 +14,8 @@ Responsibilities:
 
 Auth rules (enforced here; registry-service enforces them again internally):
   GET  /assets, /documents, /document-types, /exports   — any authenticated user
-  POST /assets, /document-types                          — admin only
+  POST /assets                                           — editor or admin
+  POST /document-types                                   — admin only
   PATCH /assets/*, /document-types/*                    — admin only
   POST /documents, PATCH /documents/*                   — editor or admin
   DELETE /documents/*, POST /documents/*/restore         — editor (archive) / admin (restore)
@@ -101,7 +102,9 @@ async def create_asset(
     claims: RequireAccessClaims,
     request_id: str | None = Depends(get_request_id),
 ) -> Any:
-    _require_role(claims, "admin")
+    # Editors and admins may create companies — enables inline company creation
+    # from the document-creation form (issue #5). Editing/archiving stays admin-only.
+    _require_role(claims, "admin", "editor")
     client = get_registry_client(request)
     upstream = await client.create_asset(
         actor_id=claims.subject,

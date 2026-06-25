@@ -317,7 +317,18 @@
     "email_error_EMAIL_CHANGE_REQUEST_NOT_FOUND": "Запрос истёк (15 мин). Начните сначала.",
     "email_error_REMFA_REQUIRED": "Неверный код TOTP. Попробуйте снова.",
     "email_error_REMFA_REPLAY": "Этот TOTP-код уже использован. Дождитесь следующего (30 с).",
-    "email_change_restart_button": "Начать сначала"
+    "email_change_restart_button": "Начать сначала",
+    "section_appearance": "Размер шрифта",
+    "appearance_description": "Выберите комфортный размер шрифта интерфейса. Настройка сохраняется для вашей учётной записи и применяется на всех ваших устройствах.",
+    "appearance_group_label": "Размер шрифта интерфейса",
+    "appearance_compact": "Компактный",
+    "appearance_normal": "Обычный",
+    "appearance_large": "Крупный",
+    "appearance_xlarge": "Очень крупный",
+    "appearance_reset": "Сбросить по умолчанию",
+    "appearance_preview_label": "Предпросмотр",
+    "appearance_preview_text": "Пример текста интерфейса Лоцмана — 0123",
+    "appearance_saved_status": "Размер шрифта: {{label}}"
   },
   "admin": {
     "users_title": "Пользователи",

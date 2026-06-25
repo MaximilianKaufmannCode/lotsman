@@ -166,4 +166,6 @@ export interface UserProfile {
   last_login_at: string | null;
   created_at: string;
   updated_at: string;
+  /** Per-user web-interface font-size preference (percent of base, 100 = default). */
+  ui_font_scale: number;
 }

@@ -74,6 +74,9 @@ class UpdateMeRequest(BaseModel):
     """Request body for PATCH /auth/me."""
 
     full_name: str = Field(..., min_length=1, max_length=200)
+    # Optional self-service UI preference. None = leave unchanged. Bounds mirror
+    # the DB CHECK and domain constants; the use case re-validates defensively.
+    ui_font_scale: int | None = Field(None, ge=80, le=150)
 
 
 class ChangeEmailRequestBody(BaseModel):
@@ -123,6 +126,7 @@ def _to_user_response(dto: UserDTO, *, totp_enrolled: bool, is_locked: bool) -> 
         updated_at=dto.updated_at,
         totp_enrolled=totp_enrolled,
         is_locked=is_locked,
+        ui_font_scale=dto.ui_font_scale,
     )
 
 
@@ -182,6 +186,7 @@ async def update_my_profile_endpoint(
             cmd=UpdateMyFullNameCommand(
                 actor_id=actor.actor_id,
                 full_name=body.full_name,
+                ui_font_scale=body.ui_font_scale,
             )
         )
 

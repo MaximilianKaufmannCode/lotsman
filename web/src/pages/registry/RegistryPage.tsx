@@ -102,6 +102,7 @@ import { useUrlState } from "@/features/registry/hooks/useUrlState";
 import type { Document } from "@/features/registry/types";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
+import { deriveRowHeight, useFontScale } from "@/shared/ui/font-scale";
 import { Input } from "@/shared/ui/input";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { type DocumentStatus, StatusBadge } from "@/shared/ui/status-badge";
@@ -114,7 +115,10 @@ import { ImportXlsxDialog } from "./ImportXlsxDialog";
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const COLUMN_VISIBILITY_STORAGE_KEY_PREFIX = "lotsman_column_visibility_";
-const ROW_HEIGHT = 48; // px — fixed for virtualizer
+// Base row height at font-scale 100 (the historical fixed value). The effective
+// height is derived from the user's font scale so rows grow with the text
+// instead of clipping/mis-centering it (see deriveRowHeight + useFontScale).
+const ROW_HEIGHT_BASE = 48; // px at scale 100
 const PAGE_SIZE = 100;
 const SEARCH_DEBOUNCE_MS = 200;
 const MIN_SEARCH_LENGTH = 2;
@@ -635,12 +639,24 @@ export function RegistryPage() {
   const VIRTUALIZE_THRESHOLD = 200;
   const isVirtualized = rows.length > VIRTUALIZE_THRESHOLD;
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  // Effective row height tracks the user's font-size preference so the fixed
+  // virtualizer geometry stays proportional to the (rem-scaled) cell text.
+  const fontScale = useFontScale();
+  const rowHeight = deriveRowHeight(ROW_HEIGHT_BASE, fontScale);
   const virtualizer = useVirtualizer({
     count: isVirtualized ? rows.length : 0,
     getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: 10,
   });
+  // estimateSize is read once per measurement pass; when the scale (hence
+  // rowHeight) changes we must force a re-measure so translateY offsets and the
+  // total size recompute — otherwise rows would overlap or leave gaps.
+  // rowHeight is a deliberate trigger dependency (not read in the body).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: rowHeight is a re-measure trigger, not referenced in the effect body
+  React.useEffect(() => {
+    virtualizer.measure();
+  }, [virtualizer, rowHeight]);
   const virtualItems = virtualizer.getVirtualItems();
   const totalSize = isVirtualized ? virtualizer.getTotalSize() : 0;
 
@@ -1186,10 +1202,10 @@ export function RegistryPage() {
                             top: 0,
                             left: 0,
                             width: "100%",
-                            height: `${ROW_HEIGHT}px`,
+                            height: `${rowHeight}px`,
                             transform: `translateY(${virtualRow.start}px)`,
                           }
-                        : { height: `${ROW_HEIGHT}px` }
+                        : { height: `${rowHeight}px` }
                     }
                     className={cn(
                       "border-b transition-colors",

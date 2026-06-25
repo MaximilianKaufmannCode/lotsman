@@ -200,6 +200,8 @@ class UserResponse(BaseModel):
     # Blocker 6: required by UsersPage to determine isPendingUser and show lockout badge.
     totp_enrolled: bool = False
     is_locked: bool = False
+    # Per-user web-interface font-size preference (percent of base, 100 = default).
+    ui_font_scale: int = 100
 
 
 class CreateUserResponse(BaseModel):

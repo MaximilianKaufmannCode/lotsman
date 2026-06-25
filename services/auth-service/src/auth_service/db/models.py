@@ -26,6 +26,7 @@ from sqlalchemy import (
     DateTime,
     Integer,
     LargeBinary,
+    SmallInteger,
     String,
     Text,
 )
@@ -52,6 +53,9 @@ class User(Base):
     __table_args__ = (
         CheckConstraint(
             "role IN ('super_admin', 'admin', 'editor', 'viewer')", name="users_role_check"
+        ),
+        CheckConstraint(
+            "ui_font_scale BETWEEN 80 AND 150", name="users_ui_font_scale_chk"
         ),
         # Partial unique on email for non-deleted users only.
         # IMPORTANT: the partial index (WHERE deleted_at IS NULL) is created
@@ -100,6 +104,16 @@ class User(Base):
         nullable=False,
         server_default=sa_text("false"),
         comment="Set to true when admin issues an OOB OTP (first login or password reset).",
+    )
+    ui_font_scale: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        server_default=sa_text("100"),
+        comment=(
+            "Per-user web-interface font-size preference as a percent of the base "
+            "(100 = default/current look). SPA maps percent/100 to the CSS "
+            "--app-font-scale multiplier. Bounded 80..150 by users_ui_font_scale_chk."
+        ),
     )
     last_login_at: Mapped[datetime | None] = mapped_column(TIMESTAMPTZ, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

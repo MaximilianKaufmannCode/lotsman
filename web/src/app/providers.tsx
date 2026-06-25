@@ -4,6 +4,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as React from "react";
 import "@/i18n/index";
+// Side-effect import: applies the saved per-user font scale to <html> at module
+// load (before first paint) — anti-FOUC, mirrors the theme init.
+import "@/shared/ui/font-scale";
 import { registerCalendarSubscriptionTokenAccessor } from "@/features/admin/calendar-subscriptions/api";
 import { registerChannelTokenAccessor } from "@/features/admin/channels/api";
 import { registerDocTypeFieldsTokenAccessor } from "@/features/admin/document-types/custom-fields-api";

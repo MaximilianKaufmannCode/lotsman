@@ -29,6 +29,15 @@ class AssetCreateRequest(BaseModel):
     inn: str | None = Field(default=None, min_length=10, max_length=12)
     notes: str | None = None
 
+    @field_validator("inn", mode="before")
+    @classmethod
+    def _blank_inn_to_none(cls, v: object) -> object:
+        # ИНН необязателен: пустую/пробельную строку трактуем как «не указан»
+        # (None), иначе min_length=10 отклонит "" и поле станет обязательным.
+        if isinstance(v, str):
+            return v.strip() or None
+        return v
+
     @field_validator("inn")
     @classmethod
     def inn_digits_only(cls, v: str | None) -> str | None:
@@ -41,6 +50,15 @@ class AssetUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=500)
     inn: str | None = Field(default=None, min_length=10, max_length=12)
     notes: str | None = None
+
+    @field_validator("inn", mode="before")
+    @classmethod
+    def _blank_inn_to_none(cls, v: object) -> object:
+        # ИНН необязателен: пустую/пробельную строку трактуем как «не указан»
+        # (None), иначе min_length=10 отклонит "" и поле станет обязательным.
+        if isinstance(v, str):
+            return v.strip() or None
+        return v
 
     @field_validator("inn")
     @classmethod

@@ -69,6 +69,8 @@ ignore = ["B008"]
 "tests/**" = ["S101"]
 "src/notification_service/db/models.py" = ["E501", "UP045", "F401"]
 "alembic/versions/*.py" = ["E501"]
+# HTML email template — long inline-CSS string literals are inherent
+"src/notification_service/infrastructure/email_html.py" = ["E501"]
 
 [tool.mypy]
 strict = true

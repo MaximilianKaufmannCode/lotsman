@@ -30,6 +30,10 @@ from notification_service.infrastructure.db.repositories import (
     SqlaUserNotificationPrefRepository,
     SqlaUserNotificationRepository,
 )
+from notification_service.infrastructure.email_html import (
+    render_markdown_subset,
+    render_notification_email,
+)
 from notification_service.infrastructure.email_send import send_email
 
 log = structlog.get_logger(__name__)
@@ -215,18 +219,38 @@ class EventNotifier:
         fields: list[str] | None = None,
         dedup_key: str | None = None,
     ) -> None:
-        # Document label (number) for nicer titles — best-effort.
+        # Document label (number) + company for nicer titles / details — best-effort.
         doc_label: str | None = None
+        company: str | None = None
         try:
             doc = await self.registry_gateway.get_document(document_id)
             if doc:
                 doc_label = doc.get("number") or None
+                company = doc.get("asset_name") or None
         except Exception:
             doc_label = None
 
         title = de.build_title(category, doc_label)
         body = de.build_body(category, fields=fields)
         doc_url = f"{self.web_bff_base_url}/registry?document_id={document_id}"
+        settings_url = f"{self.web_bff_base_url}/profile"
+
+        # Branded HTML (matches the deadline-reminder design) + plain-text fallback.
+        details = [("Компания", company or "—"), ("№ документа", doc_label or "—")]
+        body_html = render_notification_email(
+            subject=f"Лоцман: {title}",
+            headline=title,
+            intro_html=render_markdown_subset(body) if body else "",
+            details=details,
+            cta_url=doc_url,
+            settings_url=settings_url,
+            status="info",
+        )
+        detail_lines = "\n".join(f"{k}: {v}" for k, v in details if v and v != "—")
+        body_text = (
+            f"{body}\n\n{detail_lines}\n\nОткрыть документ:\n{doc_url}\n\n"
+            f"Настроить уведомления: {settings_url}\n\n— Лоцман"
+        )
 
         recipients = await self._active_recipients()
         if target_user_ids is not None:
@@ -282,7 +306,8 @@ class EventNotifier:
                 session_factory=self.session_factory,
                 to=to,
                 subject=f"Лоцман: {title}",
-                body_text=f"{body}\n\nОткрыть документ:\n{doc_url}\n\n— Лоцман",
+                body_text=body_text,
+                body_html=body_html,
             )
             if not ok:
                 log.warning("event_notifications.instant_email_failed", to=to, error=err)
@@ -339,17 +364,32 @@ class SendEventDigest:
                 async with self.session_factory() as session, session.begin():
                     await SqlaUserNotificationRepository(session).mark_emailed(done_ids)
                 continue
+            registry_url = f"{self.web_bff_base_url}/registry"
+            settings_url = f"{self.web_bff_base_url}/profile"
             lines = [f"• {r.title} — {r.body}" for r in rows]
-            body = (
-                "Сводка событий по документам реестра:\n\n"
-                + "\n".join(lines)
-                + f"\n\nОткрыть реестр:\n{self.web_bff_base_url}/registry\n\n— Лоцман"
+            tail = (
+                f"\n\nОткрыть реестр:\n{registry_url}"
+                f"\n\nНастроить уведомления: {settings_url}\n\n— Лоцман"
+            )
+            body = "Сводка событий по документам реестра:\n\n" + "\n".join(lines) + tail
+            intro_md = "За день накопились события по документам реестра:\n\n" + "\n\n".join(
+                f"**{r.title}** — {r.body}" for r in rows
+            )
+            body_html = render_notification_email(
+                subject=f"Лоцман: сводка событий ({len(rows)})",
+                headline=f"Сводка событий за день ({len(rows)})",
+                intro_html=render_markdown_subset(intro_md),
+                cta_url=registry_url,
+                cta_label="Открыть реестр",
+                settings_url=settings_url,
+                status="info",
             )
             ok, err = await send_email(
                 session_factory=self.session_factory,
                 to=to,
                 subject=f"Лоцман: сводка событий ({len(rows)})",
                 body_text=body,
+                body_html=body_html,
             )
             if ok:
                 async with self.session_factory() as session, session.begin():

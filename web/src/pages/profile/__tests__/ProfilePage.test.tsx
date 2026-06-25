@@ -18,9 +18,10 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { I18nextProvider } from "react-i18next";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JwtClaims, UserProfile } from "@/features/auth/types";
 import i18n from "@/i18n/index";
+import { DEFAULT_SCALE, STORAGE_KEY, setScale } from "@/shared/ui/font-scale";
 import { Toaster } from "@/shared/ui/toast";
 
 // ── Router mock ───────────────────────────────────────────────────────────────
@@ -146,6 +147,7 @@ const sampleProfile: UserProfile = {
   last_login_at: null,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
+  ui_font_scale: 100,
 };
 
 function makeQueryClient() {
@@ -319,5 +321,77 @@ describe("EmailChangeDialog — Step 2 submit", () => {
     });
     // Dialog stays open
     expect(screen.getByRole("dialog", { name: /шаг 2 из 2/i })).toBeInTheDocument();
+  });
+});
+
+// ── FontSizeSection (per-user font-size preference) ───────────────────────────
+
+// jsdom does not expose localStorage under the default (opaque) origin; provide
+// an in-memory stub so the write-through cache assertions work.
+class MemoryStorage {
+  private store = new Map<string, string>();
+  get length(): number {
+    return this.store.size;
+  }
+  clear(): void {
+    this.store.clear();
+  }
+  getItem(key: string): string | null {
+    return this.store.has(key) ? (this.store.get(key) as string) : null;
+  }
+  setItem(key: string, value: string): void {
+    this.store.set(key, String(value));
+  }
+  removeItem(key: string): void {
+    this.store.delete(key);
+  }
+  key(index: number): string | null {
+    return Array.from(this.store.keys())[index] ?? null;
+  }
+}
+
+describe("ProfilePage — FontSizeSection", () => {
+  beforeEach(() => {
+    // Reset the singleton font-scale store + caches so each case is deterministic.
+    vi.stubGlobal("localStorage", new MemoryStorage());
+    document.documentElement.style.removeProperty("--app-font-scale");
+    setScale(DEFAULT_SCALE);
+  });
+
+  afterAll(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("applies the chosen size to <html>, caches it, and PATCHes the server", async () => {
+    vi.mocked(authApi.updateMyProfile).mockResolvedValue({ ...sampleProfile, ui_font_scale: 115 });
+    const user = userEvent.setup();
+    renderProfile();
+
+    // Radios are disabled until the profile resolves — wait for the enabled one.
+    const large = await screen.findByRole("radio", { name: "Крупный" });
+    await waitFor(() => expect(large).toBeEnabled());
+
+    await user.click(large);
+
+    // Instant local apply + write-through cache.
+    expect(document.documentElement.style.getPropertyValue("--app-font-scale")).toBe("1.15");
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("115");
+    expect(large).toHaveAttribute("aria-checked", "true");
+
+    // Debounced server write (system of record) — sends the current full_name + scale.
+    await waitFor(() => expect(authApi.updateMyProfile).toHaveBeenCalledWith("Test User", 115));
+  });
+
+  it("adopts the server-stored size on load (reconciliation)", async () => {
+    vi.mocked(authApi.getMyProfile).mockResolvedValue({ ...sampleProfile, ui_font_scale: 130 });
+    renderProfile();
+
+    await waitFor(() =>
+      expect(document.documentElement.style.getPropertyValue("--app-font-scale")).toBe("1.3"),
+    );
+    expect(await screen.findByRole("radio", { name: "Очень крупный" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
   });
 });

@@ -21,6 +21,12 @@ from datetime import UTC, datetime
 SYSTEM_PASSWORD_SENTINEL = "SYSTEM"
 TOTP_SENTINEL = b"\x00"
 
+# Per-user web-interface font-size preference, stored as a percent of the base
+# (100 == default / current look). Bounds mirror the DB CHECK and the API clamp.
+UI_FONT_SCALE_DEFAULT = 100
+UI_FONT_SCALE_MIN = 80
+UI_FONT_SCALE_MAX = 150
+
 
 # ---------------------------------------------------------------------------
 # User
@@ -47,6 +53,9 @@ class User:
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None
+    # Web-interface font-size preference (percent of base; 100 = default).
+    # Defaulted so every existing constructor / test stays backward-compatible.
+    ui_font_scale: int = UI_FONT_SCALE_DEFAULT
 
     @property
     def is_system_actor(self) -> bool:

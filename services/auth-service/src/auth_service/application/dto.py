@@ -189,6 +189,7 @@ class UserDTO(BaseModel):
     last_login_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    ui_font_scale: int = 100
 
     @classmethod
     def from_entity(cls, user: User) -> UserDTO:
@@ -205,6 +206,7 @@ class UserDTO(BaseModel):
             last_login_at=user.last_login_at,
             created_at=user.created_at,
             updated_at=user.updated_at,
+            ui_font_scale=user.ui_font_scale,
         )
 
 
@@ -400,6 +402,10 @@ class UpdateMyFullNameCommand(BaseModel):
     # No Pydantic length validation here — the use case validates and raises
     # ProfileValidationError (typed domain error) so callers get the right HTTP 422.
     full_name: str
+    # Optional self-service UI preference (percent of base, 100 = default).
+    # None = leave unchanged. The use case validates the range and only mutates
+    # the field when a value is supplied.
+    ui_font_scale: int | None = None
 
 
 class RequestEmailChangeCommand(BaseModel):

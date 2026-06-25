@@ -656,16 +656,20 @@ async def update_my_profile(
     auth_client: GetAuthClient,
     request_id: str | None = Depends(get_request_id),
 ) -> Any:
-    """Update the authenticated user's full_name.
+    """Update the authenticated user's full_name and/or UI font-size preference.
 
     email is read-only from the user's perspective — contact an administrator
-    to change your email address.
+    to change your email address. ui_font_scale is an optional self-service UI
+    preference (percent of base) forwarded only when present.
     """
     full_name = body.get("full_name", "")
+    ui_font_scale_raw = body.get("ui_font_scale")
+    ui_font_scale = int(ui_font_scale_raw) if isinstance(ui_font_scale_raw, int) else None
     upstream = await auth_client.update_my_profile(
         actor_id=claims.subject,
         role=claims.role,
         full_name=full_name,
+        ui_font_scale=ui_font_scale,
         request_id=request_id,
     )
     if not upstream.is_success:

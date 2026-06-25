@@ -51,6 +51,14 @@ import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/card";
 import { Dialog } from "@/shared/ui/dialog";
+import {
+  applyServerScale,
+  DEFAULT_SCALE,
+  optionForPercent,
+  SCALE_OPTIONS,
+  setScale,
+  useFontScale,
+} from "@/shared/ui/font-scale";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
 import { toast } from "@/shared/ui/toast";
@@ -612,6 +620,173 @@ function ProfileSection() {
             {currentRole ? roleLabel[currentRole] : "—"}
           </span>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Section: Appearance — web-interface font size (per-user preference) ───────
+
+const APPEARANCE_GLYPH_SIZE = ["text-xs", "text-sm", "text-base", "text-lg"] as const;
+
+function FontSizeSection() {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const scale = useFontScale();
+
+  const { data: profile } = useQuery({
+    queryKey: ["profile", "me"],
+    queryFn: getMyProfile,
+  });
+
+  const radioRefs = React.useRef<Array<HTMLButtonElement | null>>([]);
+  const reconciledRef = React.useRef(false);
+  const userTouchedRef = React.useRef(false);
+  const saveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Server is the system of record: once the profile resolves, adopt its stored
+  // value (and refresh the localStorage cache) — unless the user already chose
+  // a size this session. Runs once.
+  React.useEffect(() => {
+    if (!profile || reconciledRef.current) return;
+    reconciledRef.current = true;
+    if (userTouchedRef.current) return;
+    if (typeof profile.ui_font_scale === "number" && profile.ui_font_scale !== scale) {
+      applyServerScale(profile.ui_font_scale);
+    }
+  }, [profile, scale]);
+
+  // Clean up any pending debounced save on unmount.
+  React.useEffect(
+    () => () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    },
+    [],
+  );
+
+  const saveMutation = useMutation({
+    mutationFn: (percent: number) => updateMyProfile(profile?.full_name ?? "", percent),
+    onSuccess: (updated) => {
+      qc.setQueryData(["profile", "me"], updated);
+    },
+    onError: () => {
+      // The size is already applied + cached locally; only the cross-device sync
+      // failed. Surface it without reverting the user's comfortable local size.
+      toast.show({ title: t("login_errors.network_error_title"), variant: "destructive" });
+    },
+  });
+
+  // Debounce the server write so arrow-key sweeps through the presets coalesce
+  // into a single PATCH; the local apply below stays instant either way.
+  const scheduleSave = (percent: number) => {
+    if (!profile) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => saveMutation.mutate(percent), 400);
+  };
+
+  const apply = (percent: number) => {
+    userTouchedRef.current = true;
+    setScale(percent); // instant, flash-free local apply + localStorage cache
+    scheduleSave(percent);
+  };
+
+  const selectedIndex = SCALE_OPTIONS.findIndex((o) => o.percent === scale);
+  const tabbableIndex = selectedIndex >= 0 ? selectedIndex : 0;
+
+  const onKeyDown = (e: React.KeyboardEvent, index: number) => {
+    let target: number | null = null;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+      target = (index + 1) % SCALE_OPTIONS.length;
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+      target = (index - 1 + SCALE_OPTIONS.length) % SCALE_OPTIONS.length;
+    } else if (e.key === "Home") {
+      target = 0;
+    } else if (e.key === "End") {
+      target = SCALE_OPTIONS.length - 1;
+    } else {
+      return;
+    }
+    const targetOpt = SCALE_OPTIONS[target];
+    if (!targetOpt) return;
+    e.preventDefault();
+    radioRefs.current[target]?.focus();
+    apply(targetOpt.percent); // selection follows focus (WAI-ARIA APG)
+  };
+
+  const currentLabel = t(`profile.appearance_${optionForPercent(scale)?.key ?? "normal"}`);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("profile.section_appearance")}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">{t("profile.appearance_description")}</p>
+
+        <div
+          role="radiogroup"
+          aria-label={t("profile.appearance_group_label")}
+          className="inline-flex rounded-md border border-input overflow-hidden"
+        >
+          {SCALE_OPTIONS.map((opt, i) => {
+            const checked = scale === opt.percent;
+            return (
+              // biome-ignore lint/a11y/useSemanticElements: segmented control uses the ARIA radio pattern intentionally
+              <button
+                key={opt.key}
+                ref={(el) => {
+                  radioRefs.current[i] = el;
+                }}
+                type="button"
+                role="radio"
+                aria-checked={checked}
+                tabIndex={i === tabbableIndex ? 0 : -1}
+                disabled={!profile}
+                onClick={() => apply(opt.percent)}
+                onKeyDown={(e) => onKeyDown(e, i)}
+                className={cn(
+                  "flex flex-col items-center justify-center gap-0.5 px-4 py-2 min-w-[4.5rem]",
+                  "border-r border-input last:border-r-0 transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                  checked ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted",
+                  !profile && "opacity-50 cursor-not-allowed",
+                )}
+              >
+                <span
+                  className={cn("font-semibold leading-none", APPEARANCE_GLYPH_SIZE[i])}
+                  aria-hidden
+                >
+                  А
+                </span>
+                <span className="text-xs">{t(`profile.appearance_${opt.key}`)}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Live preview — inherits the global font scale */}
+        <div className="rounded-md border border-border bg-muted/40 px-3 py-2">
+          <p className="text-xs text-muted-foreground mb-1">
+            {t("profile.appearance_preview_label")}
+          </p>
+          <p className="text-sm">{t("profile.appearance_preview_text")}</p>
+        </div>
+
+        {scale !== DEFAULT_SCALE && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => apply(DEFAULT_SCALE)}
+            disabled={!profile}
+          >
+            {t("profile.appearance_reset")}
+          </Button>
+        )}
+
+        {/* SR-only live status — announces the committed size on change */}
+        <p role="status" aria-live="polite" className="sr-only">
+          {t("profile.appearance_saved_status", { label: currentLabel })}
+        </p>
       </CardContent>
     </Card>
   );
@@ -1422,6 +1597,7 @@ export function ProfilePage() {
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
       <h1 className="text-2xl font-semibold">{t("profile.title")}</h1>
       <ProfileSection />
+      <FontSizeSection />
       <TotpSection />
       <NotificationsPrefsSection />
       <NotificationsTestSection />

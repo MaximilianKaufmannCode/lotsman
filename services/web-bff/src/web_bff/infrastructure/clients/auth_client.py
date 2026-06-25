@@ -622,15 +622,25 @@ class AuthClient(DownstreamClient):
         actor_id: uuid.UUID,
         role: str,
         full_name: str,
+        ui_font_scale: int | None = None,
         request_id: str | None = None,
     ) -> httpx.Response:
-        """PATCH /api/v1/auth/me — update authenticated user's full_name."""
+        """PATCH /api/v1/auth/me — update authenticated user's full_name and/or
+        UI font-size preference.
+
+        ui_font_scale is forwarded only when provided so a name-only edit never
+        touches the preference (and vice-versa); auth-service treats a missing
+        field as "leave unchanged".
+        """
+        payload: dict[str, object] = {"full_name": full_name}
+        if ui_font_scale is not None:
+            payload["ui_font_scale"] = ui_font_scale
         return await self.patch(
             "/api/v1/auth/me",
             actor_id=actor_id,
             role=role,
             request_id=request_id,
-            json={"full_name": full_name},
+            json=payload,
         )
 
     async def request_email_change(

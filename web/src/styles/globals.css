@@ -138,11 +138,29 @@
   border-color: hsl(var(--border));
 }
 
+/* ============================================================
+   User font-size preference (per-user, profile setting).
+
+   `--app-font-scale` is a UNITLESS multiplier (fallback 1 = the
+   exact current look) set on <html> by shared/ui/font-scale.ts
+   before first paint. Scaling the ROOT font-size means every
+   rem-based Tailwind token (text-*, spacing, sizing) grows
+   together = a coherent, accessible "zoom" that ADDS to the
+   browser's native zoom (WCAG 1.4.4) rather than replacing it.
+   The 16px anchor is a literal, so there is no recursion.
+   ============================================================ */
+html {
+  font-size: calc(16px * var(--app-font-scale, 1));
+}
+
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
   font-family: "Inter", system-ui, sans-serif;
-  font-size: 14px;
+  /* 0.875rem == 14px at scale 1 → byte-identical to the previous
+     absolute 14px, but now relative so it tracks --app-font-scale
+     instead of staying pinned while text-* utilities scale. */
+  font-size: 0.875rem;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

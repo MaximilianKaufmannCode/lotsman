@@ -15,6 +15,7 @@
  * so we use a thin fetch-based adapter here instead of openapi-fetch.
  */
 
+import { recoverFrom401 } from "@/shared/api/interceptor";
 import type {
   AdminUser,
   AdminUserDetail,
@@ -31,7 +32,6 @@ import type {
   UserProfile,
   UserRole,
 } from "./types";
-import { recoverFrom401 } from "@/shared/api/interceptor";
 
 const BASE = (import.meta.env.VITE_API_BASE_URL ?? "/api") as string;
 
@@ -328,13 +328,26 @@ export async function getMyProfile(): Promise<UserProfile> {
 
 /**
  * PATCH /api/v1/auth/me
- * Updates the authenticated user's full_name. Returns the updated profile.
+ * Updates the authenticated user's full_name and/or font-size preference.
+ * Returns the updated profile.
+ *
+ * `ui_font_scale` (percent of base, 100 = default) is sent only when provided,
+ * so a name-only edit never touches the preference and vice-versa. The current
+ * full_name is always sent because the endpoint treats it as required; the
+ * server only emits a profile-change event when the name actually changes.
  */
-export async function updateMyProfile(full_name: string): Promise<UserProfile> {
+export async function updateMyProfile(
+  full_name: string,
+  ui_font_scale?: number,
+): Promise<UserProfile> {
+  const body: { full_name: string; ui_font_scale?: number } = { full_name };
+  if (ui_font_scale !== undefined) {
+    body.ui_font_scale = ui_font_scale;
+  }
   return apiFetch<UserProfile>("/v1/auth/me", {
     method: "PATCH",
     auth: true,
-    body: { full_name },
+    body,
   });
 }
 

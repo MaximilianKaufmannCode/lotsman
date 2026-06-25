@@ -317,7 +317,18 @@
     "email_error_EMAIL_CHANGE_REQUEST_NOT_FOUND": "Request expired (15 min). Start over.",
     "email_error_REMFA_REQUIRED": "Invalid TOTP code. Please try again.",
     "email_error_REMFA_REPLAY": "This TOTP code has already been used. Wait for the next one (30 s).",
-    "email_change_restart_button": "Start over"
+    "email_change_restart_button": "Start over",
+    "section_appearance": "Font size",
+    "appearance_description": "Choose a comfortable interface font size. The setting is saved to your account and applied on all your devices.",
+    "appearance_group_label": "Interface font size",
+    "appearance_compact": "Compact",
+    "appearance_normal": "Normal",
+    "appearance_large": "Large",
+    "appearance_xlarge": "Extra large",
+    "appearance_reset": "Reset to default",
+    "appearance_preview_label": "Preview",
+    "appearance_preview_text": "Sample of the Lotsman interface text — 0123",
+    "appearance_saved_status": "Font size: {{label}}"
   },
   "admin": {
     "users_title": "Users",

@@ -154,12 +154,14 @@ async def test_unknown_user_raises_not_found(use_case: UpdateMyFullName) -> None
 
 
 # ---------------------------------------------------------------------------
-# No-op when name is unchanged (still emits event — idempotency is OK here)
+# No-op when name is unchanged — update still runs, but NO profile_updated event
+# is emitted (avoids outbox spam when only the font-size preference is PATCHed,
+# since the SPA always re-sends the current full_name alongside it).
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_no_change_still_calls_update(
+async def test_no_name_change_does_not_emit_event(
     use_case: UpdateMyFullName,
     user_repo: FakeUserRepository,
     outbox: FakeEventOutbox,
@@ -172,6 +174,90 @@ async def test_no_change_still_calls_update(
         cmd=UpdateMyFullNameCommand(actor_id=user.id, full_name=original_name)
     )
 
-    # Result is correct and event is still emitted (simple implementation).
+    # Result is correct and the row is still persisted (idempotent save), but the
+    # identity-change event is NOT emitted because nothing identity-relevant changed.
     assert result.full_name == original_name
+    assert "auth.user.profile_updated.v1" not in outbox.event_types()
+
+
+# ---------------------------------------------------------------------------
+# ui_font_scale — optional self-service UI preference
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_font_scale_only_change_persists_without_name_event(
+    use_case: UpdateMyFullName,
+    user_repo: FakeUserRepository,
+    outbox: FakeEventOutbox,
+) -> None:
+    user = make_user()
+    await user_repo.add(user)
+    original_name = user.full_name
+
+    result = await use_case.execute(
+        cmd=UpdateMyFullNameCommand(
+            actor_id=user.id, full_name=original_name, ui_font_scale=130
+        )
+    )
+
+    # Preference persisted, returned in the DTO, and NO name-change event emitted.
+    assert result.ui_font_scale == 130
+    stored = await user_repo.get_by_id(user.id)
+    assert stored is not None
+    assert stored.ui_font_scale == 130
+    assert "auth.user.profile_updated.v1" not in outbox.event_types()
+
+
+@pytest.mark.asyncio
+async def test_name_and_font_change_emits_name_event(
+    use_case: UpdateMyFullName,
+    user_repo: FakeUserRepository,
+    outbox: FakeEventOutbox,
+) -> None:
+    user = make_user()
+    await user_repo.add(user)
+
+    result = await use_case.execute(
+        cmd=UpdateMyFullNameCommand(
+            actor_id=user.id, full_name="Новое Имя", ui_font_scale=115
+        )
+    )
+
+    assert result.full_name == "Новое Имя"
+    assert result.ui_font_scale == 115
     assert "auth.user.profile_updated.v1" in outbox.event_types()
+
+
+@pytest.mark.asyncio
+async def test_default_when_font_scale_omitted(
+    use_case: UpdateMyFullName,
+    user_repo: FakeUserRepository,
+) -> None:
+    user = make_user()
+    await user_repo.add(user)
+
+    # Omitting ui_font_scale must leave the existing value untouched (default 100).
+    result = await use_case.execute(
+        cmd=UpdateMyFullNameCommand(actor_id=user.id, full_name="Другое Имя")
+    )
+
+    assert result.ui_font_scale == 100
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_scale", [79, 151, 0, 1000, -5])
+async def test_out_of_range_font_scale_raises(
+    use_case: UpdateMyFullName,
+    user_repo: FakeUserRepository,
+    bad_scale: int,
+) -> None:
+    user = make_user()
+    await user_repo.add(user)
+
+    with pytest.raises(ProfileValidationError):
+        await use_case.execute(
+            cmd=UpdateMyFullNameCommand(
+                actor_id=user.id, full_name="Valid Name", ui_font_scale=bad_scale
+            )
+        )

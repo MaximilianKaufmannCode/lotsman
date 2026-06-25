@@ -65,6 +65,7 @@ def _user_from_model(m: UserModel) -> User:
         created_at=m.created_at,
         updated_at=m.updated_at,
         deleted_at=m.deleted_at,
+        ui_font_scale=m.ui_font_scale,
     )
 
 
@@ -131,6 +132,7 @@ class SqlaUserRepository:
             created_at=user.created_at,
             updated_at=user.updated_at,
             deleted_at=user.deleted_at,
+            ui_font_scale=user.ui_font_scale,
         )
         self._session.add(m)
 
@@ -149,6 +151,7 @@ class SqlaUserRepository:
                 last_login_at=user.last_login_at,
                 updated_at=datetime.now(tz=UTC),
                 deleted_at=user.deleted_at,
+                ui_font_scale=user.ui_font_scale,
             )
         )
 

@@ -25,7 +25,7 @@ log = structlog.get_logger(__name__)
 # Canonical column definitions: key → (header label RU, extractor function)
 _COLUMN_DEFS: dict[str, tuple[str, Any]] = {
     "asset_name": (
-        "Контрагент",
+        "Компания",
         lambda d, assets: (
             assets.get(d.asset_id, type("", (), {"name": ""})()).name
             if d.asset_id in assets

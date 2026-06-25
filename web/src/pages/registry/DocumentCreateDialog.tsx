@@ -25,7 +25,7 @@ import { Input } from "@/shared/ui/input";
 // ── Schema ─────────────────────────────────────────────────────────────────────
 
 const createDocSchema = z.object({
-  asset_id: z.string().min(1, "Выберите контрагента"),
+  asset_id: z.string().min(1, "Выберите компанию"),
   type_code: z.string().min(1, "Выберите тип документа"),
   number: z.string().min(1, "Обязательное поле"),
   issue_date: z.string().nullable().optional(),
@@ -176,8 +176,8 @@ export function DocumentCreateDialog({ open, onClose }: DocumentCreateDialogProp
         >
           {isLoading && <p className="text-sm text-muted-foreground">Загрузка данных...</p>}
 
-          {/* Контрагент */}
-          <FormField label="Контрагент *" error={errors.asset_id?.message}>
+          {/* Компания */}
+          <FormField label="Компания *" error={errors.asset_id?.message}>
             <select
               {...register("asset_id")}
               ref={(el) => {
@@ -191,7 +191,7 @@ export function DocumentCreateDialog({ open, onClose }: DocumentCreateDialogProp
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               )}
             >
-              <option value="">— Выберите контрагента —</option>
+              <option value="">— Выберите компанию —</option>
               {assetsData?.items.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}
@@ -268,12 +268,12 @@ export function DocumentCreateDialog({ open, onClose }: DocumentCreateDialogProp
           {/* Admin-only asset create hint */}
           {claims?.role === "admin" && (
             <p className="text-xs text-muted-foreground">
-              Контрагент не найден?{" "}
+              Компания не найдена?{" "}
               <a
                 href="/admin/assets"
                 className="text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
               >
-                Добавить контрагента
+                Добавить компанию
               </a>
             </p>
           )}

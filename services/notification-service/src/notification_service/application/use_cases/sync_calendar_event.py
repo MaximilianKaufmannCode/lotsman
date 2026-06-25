@@ -325,7 +325,7 @@ def _build_body(
         f"Документ: {doc_name}",
     ]
     if asset_name:
-        lines.append(f"Контрагент: {asset_name}")
+        lines.append(f"Компания: {asset_name}")
     lines += [
         f"Срок действия: {expires_at.isoformat()}",
         "",

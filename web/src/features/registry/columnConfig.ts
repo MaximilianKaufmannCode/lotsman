@@ -4,7 +4,7 @@
 /**
  * Column definitions for the registry TanStack Table.
  * Each column has: id, accessor path, display flags, and metadata for the
- * visibility panel (US-24). The "Контрагент" column is always pinned left
+ * visibility panel (US-24). The "Компания" column is always pinned left
  * and cannot be hidden.
  *
  * v1.24.0: Added filterType + fieldKey for per-column header filter UI.
@@ -33,7 +33,7 @@ export interface ColumnMeta {
   hideAtTablet: boolean;
   /** Cannot be hidden via the columns panel */
   alwaysVisible: boolean;
-  /** Pin to the left — only "Контрагент" */
+  /** Pin to the left — only "Компания" */
   pinLeft: boolean;
   /** Default visibility in the column panel */
   defaultVisible: boolean;

@@ -138,7 +138,7 @@ export function AssetDialog({ open, asset, onClose, onSubmit }: AssetDialogProps
       >
         <div className="flex items-center justify-between p-4 border-b">
           <h2 id="asset-dialog-title" className="text-base font-semibold">
-            {isEdit ? "Редактировать контрагента" : "Добавить контрагента"}
+            {isEdit ? "Редактировать компанию" : "Добавить компанию"}
           </h2>
           <button
             type="button"
@@ -155,7 +155,7 @@ export function AssetDialog({ open, asset, onClose, onSubmit }: AssetDialogProps
 
         <form
           onSubmit={handleFormSubmit}
-          aria-label={isEdit ? "Форма редактирования контрагента" : "Форма создания контрагента"}
+          aria-label={isEdit ? "Форма редактирования компании" : "Форма создания компании"}
           className="p-4 space-y-4"
         >
           <FormField label="Название *" error={errors.name?.message}>

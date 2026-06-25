@@ -41,11 +41,11 @@ export function useCreateAsset() {
   return useMutation({
     mutationFn: (payload: CreateAssetPayload) => createAsset(payload),
     onSuccess: (asset: Asset) => {
-      toast.show({ title: `Контрагент "${asset.name}" добавлен`, variant: "success" });
+      toast.show({ title: `Компания "${asset.name}" добавлена`, variant: "success" });
       void queryClient.invalidateQueries({ queryKey: [ASSETS_QUERY_KEY] });
     },
     onError: (err: unknown) => {
-      const msg = err instanceof Error ? err.message : "Ошибка при создании контрагента";
+      const msg = err instanceof Error ? err.message : "Ошибка при создании компании";
       toast.show({ title: "Ошибка", description: msg, variant: "destructive" });
     },
   });
@@ -57,11 +57,11 @@ export function usePatchAsset() {
     mutationFn: ({ id, payload }: { id: string; payload: PatchAssetPayload }) =>
       patchAsset(id, payload),
     onSuccess: () => {
-      toast.show({ title: "Контрагент обновлён", variant: "success" });
+      toast.show({ title: "Компания обновлена", variant: "success" });
       void queryClient.invalidateQueries({ queryKey: [ASSETS_QUERY_KEY] });
     },
     onError: (err: unknown) => {
-      const msg = err instanceof Error ? err.message : "Ошибка при обновлении контрагента";
+      const msg = err instanceof Error ? err.message : "Ошибка при обновлении компании";
       toast.show({ title: "Ошибка", description: msg, variant: "destructive" });
     },
   });
@@ -72,7 +72,7 @@ export function useArchiveAsset() {
   return useMutation({
     mutationFn: (id: string) => archiveAsset(id),
     onSuccess: () => {
-      toast.show({ title: "Контрагент архивирован", variant: "default" });
+      toast.show({ title: "Компания архивирована", variant: "default" });
       void queryClient.invalidateQueries({ queryKey: [ASSETS_QUERY_KEY] });
     },
     onError: (err: unknown) => {

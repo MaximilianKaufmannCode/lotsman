@@ -40,7 +40,7 @@ _FIELD_LABELS_RU: dict[str, str] = {
     "responsible_user_id": "ответственный",
     "status": "статус",
     "notes": "заметки",
-    "asset_id": "контрагент",
+    "asset_id": "компания",
     "type_code": "тип документа",
     "custom_field_values": "доп. поля",
     "attachments": "вложения",

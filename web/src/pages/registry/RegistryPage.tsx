@@ -8,7 +8,7 @@
  * - TanStack Table for column definitions, sorting, selection, column visibility
  * - TanStack Virtual for row virtualization (target: 10 000+ rows, DOM ≤500 nodes)
  * - URL is state for filters/sort/page (useUrlState + TanStack Router)
- * - Sticky header + pinned "Контрагент" column (position: sticky)
+ * - Sticky header + pinned "Компания" column (position: sticky)
  * - Inline edit on double-click (cell-level state machine)
  * - Keyboard navigation: arrows, Enter/Esc, Home/End, PageUp/PageDown
  * - ⌘K / Ctrl+K for global search (header search input focus)
@@ -236,7 +236,7 @@ export function RegistryPage() {
   // Priority: admin-set override > built-in standard label > cf_* header from
   // column def > raw id as last resort.
   const builtInLabels: Record<string, string> = {
-    asset_name: "Контрагент",
+    asset_name: "Компания",
     type_display_name: "Тип",
     number: "№ документа",
     expiry_date: "Действ. до",
@@ -460,7 +460,7 @@ export function RegistryPage() {
             ]
           : []),
 
-        // Контрагент — always visible, pinned left
+        // Компания — always visible, pinned left
         columnHelper.accessor("asset_name", {
           id: "asset_name",
           header: effectiveLabel("asset_name", t("registry.col_counterparty")),
@@ -1765,7 +1765,7 @@ function ColumnVisibilityPanel({
       </DndContext>
       {allOptionalHidden && (
         <p className="mt-2 text-xs text-muted-foreground">
-          Минимальный набор: Контрагент, Тип, Статус
+          Минимальный набор: Компания, Тип, Статус
         </p>
       )}
       <div className="mt-2 flex items-center justify-between gap-2">
@@ -1820,7 +1820,7 @@ function SortableColumnRow({
     ? (col.columnDef.header as string)
     : meta?.labelKey
       ? col.id === "asset_name"
-        ? "Контрагент"
+        ? "Компания"
         : col.id === "type_display_name"
           ? "Тип"
           : col.id === "number"
@@ -1836,7 +1836,7 @@ function SortableColumnRow({
                     : "Дата создания"
       : col.id;
 
-  // Pinned column (Контрагент) is not draggable — keeps it first.
+  // Pinned column (Компания) is not draggable — keeps it first.
   const allowDrag = canReorder && !isPinned;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: col.id,

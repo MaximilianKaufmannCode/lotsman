@@ -82,17 +82,17 @@ export function buildChips(search: RegistrySearch): ChipInfo[] {
     const display =
       search.asset_ids.length === 1
         ? `${search.asset_ids[0]?.slice(0, 8)}…`
-        : `${search.asset_ids.length} контрагентов`;
+        : `${search.asset_ids.length} компаний`;
     chips.push({
       filterKey: "asset_ids",
-      label: "Контрагент",
+      label: "Компания",
       value: display,
       fullValue: search.asset_ids.join(", "),
     });
   } else if (search.asset_id) {
     chips.push({
       filterKey: "asset_id",
-      label: "Контрагент",
+      label: "Компания",
       value: `${search.asset_id.slice(0, 8)}…`,
       fullValue: search.asset_id,
     });
@@ -165,7 +165,7 @@ export function buildChips(search: RegistrySearch): ChipInfo[] {
     });
   }
 
-  // v1.24.4 — sidebar «Статус жизненного цикла контрагента» удалён.
+  // v1.24.4 — sidebar «Статус жизненного цикла компании» удалён.
   // Колонка «Активность» в таблице фильтруется через воронку в её шапке
   // (per-column popover на cf_aktivnost), чипы рендерятся через cfFilters ниже.
 

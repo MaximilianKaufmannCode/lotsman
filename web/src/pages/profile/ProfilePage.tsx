@@ -1129,7 +1129,7 @@ const NOTIF_CATEGORIES: ReadonlyArray<{ id: string; label: string; hint: string 
   { id: "doc_assigned", label: "Назначение ответственным", hint: "Вас назначили ответственным" },
   { id: "doc_attachment", label: "Вложения", hint: "Файлы добавлены или удалены" },
   { id: "doc_archived", label: "Архивирование", hint: "Архивирование и восстановление" },
-  { id: "asset", label: "Контрагенты", hint: "Изменения по контрагентам" },
+  { id: "asset", label: "Компании", hint: "Изменения по компаниям" },
 ];
 
 const EMAIL_MODES: ReadonlyArray<{ id: "instant" | "digest" | "off"; label: string }> = [

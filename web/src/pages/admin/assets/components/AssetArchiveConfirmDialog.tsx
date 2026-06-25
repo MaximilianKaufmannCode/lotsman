@@ -60,15 +60,15 @@ export function AssetArchiveConfirmDialog({
         )}
       >
         <h2 id="archive-asset-title" className="text-base font-semibold">
-          Архивировать контрагента?
+          Архивировать компанию?
         </h2>
         <p id="archive-asset-desc" className="mt-2 text-sm text-muted-foreground">
-          Контрагент <strong className="text-foreground">{asset.name}</strong> будет архивирован.
+          Компания <strong className="text-foreground">{asset.name}</strong> будет архивирована.
           {activeDocCount > 0 && (
             <>
               {" "}
               <strong className="text-destructive">{activeDocCount} активных документов</strong>{" "}
-              будут архивированы вместе с ним. Уже архивированные документы не затрагиваются.
+              будут архивированы вместе с ней. Уже архивированные документы не затрагиваются.
             </>
           )}
           {activeDocCount === 0 && " Документов для архивирования нет."}

@@ -56,7 +56,7 @@ test.describe("Registry — editor flows", () => {
     await expect(page.getByRole("dialog", { name: "Добавить документ" })).toBeVisible();
 
     // Select an asset and type
-    await page.selectOption('[aria-label*="Контрагент"]', { index: 1 });
+    await page.selectOption('[aria-label*="Компания"]', { index: 1 });
     await page.selectOption('[aria-label*="Тип документа"]', { index: 1 });
     await page.fill('[placeholder="Например: ДГ-2026-001"]', "TEST-2026-E2E");
     await page.click('[type="submit"]:has-text("Создать документ")');
@@ -120,8 +120,8 @@ test.describe("Registry — admin flows", () => {
   test("admin creates an asset, a document type, and a document", async ({ page }) => {
     // Create asset
     await page.goto("/admin/assets");
-    await page.click('button:has-text("Добавить контрагента")');
-    const assetDialog = page.getByRole("dialog", { name: "Добавить контрагента" });
+    await page.click('button:has-text("Добавить компанию")');
+    const assetDialog = page.getByRole("dialog", { name: "Добавить компанию" });
     await assetDialog.getByRole("textbox", { name: "Название" }).fill("ООО Тест Е2Е");
     await assetDialog.getByRole("textbox", { name: "ИНН" }).fill("7701234567");
     await page.click('[type="submit"]:has-text("Создать")');

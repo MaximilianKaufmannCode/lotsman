@@ -160,7 +160,7 @@ def _render_ics(
 
             body_parts = [f"Документ: {doc_name}"]
             if asset_name:
-                body_parts.append(f"Контрагент: {asset_name}")
+                body_parts.append(f"Компания: {asset_name}")
             body_parts.append(f"Срок: {expires_at.isoformat()}")
             event.add("description", vText("\n".join(body_parts)))
 

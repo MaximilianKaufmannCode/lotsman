@@ -122,10 +122,10 @@ export function AssetsPage() {
     <div className="flex flex-col h-full">
       {/* Page header */}
       <div className="px-6 py-4 border-b flex items-center justify-between gap-4">
-        <h1 className="text-xl font-semibold">Контрагенты</h1>
+        <h1 className="text-xl font-semibold">Компании</h1>
         <Button size="sm" onClick={() => setCreateOpen(true)}>
           <Plus className="size-4" aria-hidden />
-          Добавить контрагента
+          Добавить компанию
         </Button>
       </div>
 
@@ -133,7 +133,7 @@ export function AssetsPage() {
       <div className="px-6 py-3 border-b">
         <Input
           type="search"
-          aria-label="Поиск контрагентов"
+          aria-label="Поиск компаний"
           placeholder="Поиск по названию..."
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -153,7 +153,7 @@ export function AssetsPage() {
 
         {isError && (
           <div className="flex flex-col items-center justify-center h-full gap-3">
-            <p className="text-muted-foreground">Не удалось загрузить контрагентов</p>
+            <p className="text-muted-foreground">Не удалось загрузить компании</p>
             <Button variant="outline" onClick={() => void refetch()}>
               <RefreshCw className="size-4 mr-2" aria-hidden />
               Повторить
@@ -162,7 +162,7 @@ export function AssetsPage() {
         )}
 
         {!isLoading && !isError && (
-          <table className="w-full border-collapse text-sm" aria-label="Список контрагентов">
+          <table className="w-full border-collapse text-sm" aria-label="Список компаний">
             <thead className="sticky top-0 z-10 bg-muted/95 border-b">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
@@ -185,7 +185,7 @@ export function AssetsPage() {
                     colSpan={columns.length}
                     className="py-16 text-center text-sm text-muted-foreground"
                   >
-                    {debouncedQ ? "Контрагенты не найдены" : "Нет контрагентов"}
+                    {debouncedQ ? "Компании не найдены" : "Нет компаний"}
                   </td>
                 </tr>
               ) : (

@@ -425,7 +425,7 @@ class ImportXlsxConfirm:
         # Asset is required (forward-fill is applied by the caller before us).
         asset_name = standard.get("asset")
         if _is_blank(asset_name):
-            raise ValueError("Не указан контрагент (колонка «Компания» / «Контрагент»)")
+            raise ValueError("Не указана компания (колонка «Компания» / «Контрагент»)")
 
         assets = await self.asset_repo.list_active(q=str(asset_name), limit=5)
         asset = next(

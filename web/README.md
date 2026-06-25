@@ -21,7 +21,7 @@ React 19 single-page application. Runs behind `web-bff` in both dev and producti
 | Unit tests | Vitest + Testing Library + vitest-axe |
 | E2E tests | Playwright |
 | API types | openapi-typescript (generated from `docs/api/web-bff.yaml`) |
-| i18n | react-i18next (RU primary, EN secondary) |
+| i18n | react-i18next — RU is the default locale; EN is the fallback (`fallbackLng`) for untranslated strings |
 
 ---
 
@@ -63,10 +63,13 @@ pnpm test
 
 ### E2E tests
 
+Specs live in `web/e2e/`. Playwright does **not** start a dev server for you — run `pnpm dev` in another terminal first (it tests against `http://localhost:5173`).
+
 Install browsers on first run:
 
 ```bash
 pnpm exec playwright install --with-deps
+pnpm dev            # in a separate terminal
 pnpm exec playwright test
 ```
 
@@ -76,40 +79,60 @@ pnpm exec playwright test
 pnpm gen:api
 ```
 
-This reads `docs/api/web-bff.yaml` and writes `src/shared/api/schema.gen.ts`. The OpenAPI spec for `web-bff` does not yet exist (feature endpoints land in subsequent sprints); the generated file is a stub until then.
+This reads `../docs/api/web-bff.yaml` (relative to `web/`) and writes `src/shared/api/schema.gen.ts`. The `web-bff` OpenAPI spec does not exist yet, so `schema.gen.ts` ships as a stub (`paths = Record<string, never>`) that lets the typed client compile. Regenerate once the spec lands.
 
 ---
 
 ## Where things live
 
+Code is split three ways: **`pages/`** are route-level screens, **`features/`** hold domain logic (API clients, hooks, components grouped by domain), and **`shared/`** is cross-cutting UI, layout, and the API client. A page composes hooks and components from one or more features.
+
 ```
 web/src/
 ├── app/
-│   ├── router.tsx          TanStack Router root (file-based route tree)
-│   └── providers.tsx       Query client, i18n, theme providers
-├── pages/
-│   ├── login/              LoginPage.tsx
-│   ├── registry/           RegistryPage.tsx (main document grid)
-│   └── settings/           SettingsPage.tsx
-├── shared/
-│   ├── ui/                 shadcn/ui components (we own these — edit freely)
-│   ├── layout/             AppLayout.tsx, Header.tsx
+│   ├── router.tsx          TanStack Router root (route tree)
+│   └── providers.tsx       Query client, i18n, theme + auth providers; wires the 401 interceptor
+├── pages/                  Route-level screens
+│   ├── login/              LoginPage
+│   ├── first-login/        FirstLoginPage (forced password + TOTP enrolment)
+│   ├── registry/           RegistryPage (the document grid) + its dialogs:
+│   │                       DocumentCreateDialog, QuickTypeDialog, DocumentDetailDrawer,
+│   │                       EditColumnDialog, ExportJobsModal, ImportXlsxDialog
+│   ├── profile/            ProfilePage (personal settings: font size, notification matrix, email)
+│   ├── settings/           SettingsPage
+│   ├── admin/              Admin surfaces: assets, users, document-types, channels,
+│   │                       calendar-subscriptions, notifications
+│   └── system/             Service-control panel (admin-only): SystemHealth/Audit/Logs/
+│                           Migrations/Queues/Keys/Maintenance pages + SystemLayout
+├── features/               Domain logic, grouped by domain
+│   ├── auth/               AuthProvider, AuthGuard, RoleGuard, token refresh, broadcast sync
+│   ├── registry/           api.ts, hooks/ (useDocuments, useAssets, …), filters/,
+│   │                       columnConfig.ts, computeStatus.ts, types.ts, __tests__/
+│   ├── admin/              channels / document-types / calendar-subscriptions API clients
+│   ├── notifications/      NotificationBell
+│   └── system/             api.ts, types.ts
+├── shared/                 Cross-cutting building blocks
+│   ├── ui/                 shadcn/ui components (we own these), plus theme-toggle,
+│   │                       status-badge, and font-scale.ts (the --app-font-scale setter)
+│   ├── layout/             AppLayout, Header, Footer
 │   ├── api/
 │   │   ├── client.ts       openapi-fetch typed client
-│   │   └── schema.gen.ts   Generated from web-bff OpenAPI spec
+│   │   ├── interceptor.ts  Global 401 recovery (single refresh, then retry or kick to /login)
+│   │   └── schema.gen.ts   Generated from the web-bff OpenAPI spec (currently a stub)
 │   └── lib/
 │       └── cn.ts           clsx + tailwind-merge helper
 ├── i18n/
-│   ├── index.ts            i18next init
-│   ├── ru.json             Russian strings (primary)
-│   └── en.json             English strings
+│   ├── index.ts            i18next init (default RU, fallback EN)
+│   ├── ru.json             Russian strings (default locale)
+│   └── en.json             English strings (fallback)
 ├── styles/
-│   └── globals.css         Tailwind base, CSS custom properties (design tokens)
+│   └── globals.css         Tailwind base + CSS custom properties (design tokens)
 └── test/
-    └── setup.ts            Vitest global setup (jest-dom, axe)
+    ├── setup.ts            Vitest global setup (jest-dom, axe)
+    └── vitest-axe.d.ts     Type declarations for the a11y matcher
 ```
 
-Add new feature modules as `src/features/<feature-name>/` once the feature has a dedicated use case.
+The tree is illustrative, not exhaustive — new domains go under `src/features/<domain>/`, new screens under `src/pages/`.
 
 ---
 
@@ -119,9 +142,22 @@ Add new feature modules as `src/features/<feature-name>/` once the feature has a
 - **No `any` or `unknown` without narrowing.** TypeScript strict mode is enforced; Biome lint catches unsafe casts.
 - **URL is state** for filters, sort, and pagination. Use TanStack Router search params — do not store table state in React state that disappears on refresh.
 - **Russian for UI text**, English for code and comments.
-- **Design tokens** (status colors, etc.) are declared in `the design spec` and materialized in `src/styles/globals.css`. Do not hardcode HSL values in components.
-- **Accessibility**: WCAG 2.2 AA. All interactive elements must be keyboard-navigable with visible focus ring. Run `vitest-axe` checks in component tests.
+- **«Компания» is the canonical user-facing term** (renamed from «Контрагент» in 2.2.0; «Company» in EN). The internal identifier stays `asset` — so code, API paths, and i18n keys keep `asset` / `col_counterparty` while displayed strings say «Компания». Don't rename the identifier.
+- **Interface font size** is a unitless multiplier on the `--app-font-scale` CSS custom property (`globals.css` does `font-size: calc(16px * var(--app-font-scale, 1))`). It's set by `shared/ui/font-scale.ts`, cached in `localStorage` (`lotsman-font-scale`), and — for signed-in users — backed by the server (`auth.users.ui_font_scale`). Size with `rem`/relative units so this scales; never hardcode `px`.
+- **Design tokens** (status colors, radii, etc.) are CSS custom properties declared in `src/styles/globals.css` and consumed via Tailwind. Do not hardcode HSL values in components.
+- **Accessibility**: WCAG 2.2 AA. All interactive elements must be keyboard-navigable with a visible focus ring. Run `vitest-axe` checks in component tests.
 
 ---
 
-*Last updated: 2026-05-06*
+## Notable features
+
+The document form supports inline creation so you never leave the registry to add a missing reference:
+
+- **«Создать компанию»** (in `DocumentCreateDialog`) — available to **editor or admin**.
+- **«Создать тип документа»** (`QuickTypeDialog`) — **admin-only**.
+
+Other 2.1.0–2.4.0 user-facing work that touches the SPA: the personal interface font-size setting (`profile/`, see Conventions), the «Контрагент» → «Компания» rename, and the rebranded HTML notification emails (rendered backend-side). See the root `CHANGELOG.md` for the full history.
+
+---
+
+*Last updated: 2026-06-25*

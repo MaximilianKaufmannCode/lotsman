@@ -1,13 +1,27 @@
 # Saved Filters and Registry Index Plan
 
-Feature: multi-level document registry filtering (v1.23.0)
+Feature: multi-level document registry filtering (v1.23.0, shipped 2026-05-26).
 
-Status: DRAFT — migrations not yet applied.
-Backup taken: `pre-filters-feature-2026-05-26-1028.sql.gz` (157 KB).
+**Status: SHIPPED.** This document is the record of a delivered design.
+Migrations applied:
+
+| Migration | Service | What it adds |
+|---|---|---|
+| `0008_add_user_saved_filters` | auth | `auth.user_saved_filters` table (§1) |
+| `0007_add_filter_indexes` | registry | three filter indexes on `registry.documents` (§2) |
+| `0008_add_asset_status` | registry | `status` column + index on `registry.assets` (§5) |
+
+Pre-migration backup: `pre-filters-feature-2026-05-26-1028.sql.gz` (157 KB),
+kept under `/opt/lotsman/backups/`.
+
+_Last updated: 2026-06-25._
 
 ---
 
 ## Section 1. Table: auth.user_saved_filters
+
+Created by migration `auth/0008_add_user_saved_filters` (down_revision
+`0007_key_rotations`).
 
 ### Purpose
 
@@ -127,12 +141,28 @@ The new table must be included explicitly because it is created after the
 
 ### Candidate index analysis
 
+> **How these indexes are actually created.** The shipped migration
+> `0007_add_filter_indexes` uses plain `CREATE INDEX IF NOT EXISTS` inside the
+> normal Alembic transaction — **not** `CONCURRENTLY`. `env.py` does not set
+> `transaction_per_migration = False`, so a `CONCURRENTLY` statement cannot run
+> from inside the migration. At the current scale (<10 k rows) a plain
+> `CREATE INDEX` takes milliseconds and holds a brief `ShareLock` only.
+>
+> For zero-downtime on a large table, the operator runs the three
+> `CREATE INDEX CONCURRENTLY IF NOT EXISTS` statements manually via `psql`
+> **before** applying the migration; the `IF NOT EXISTS` guard then makes the
+> migration a no-op for those indexes (Option A in the migration header). The
+> `CONCURRENTLY` form shown in the DDL blocks below is the optional manual
+> pre-step, not what the migration itself emits.
+
 ---
 
 #### Candidate A — `documents_responsible_active_idx`
 
 ```sql
-CREATE INDEX CONCURRENTLY documents_responsible_active_idx
+-- In-migration: CREATE INDEX IF NOT EXISTS (plain).
+-- Optional manual pre-step for zero-downtime:
+CREATE INDEX CONCURRENTLY IF NOT EXISTS documents_responsible_active_idx
     ON registry.documents (responsible_user_id)
     WHERE deleted_at IS NULL;
 ```
@@ -166,7 +196,9 @@ With a 2–4 user team this index will be tiny and essentially free to maintain.
 #### Candidate B — `documents_type_active_idx`
 
 ```sql
-CREATE INDEX CONCURRENTLY documents_type_active_idx
+-- In-migration: CREATE INDEX IF NOT EXISTS (plain).
+-- Optional manual pre-step for zero-downtime:
+CREATE INDEX CONCURRENTLY IF NOT EXISTS documents_type_active_idx
     ON registry.documents (type_code)
     WHERE deleted_at IS NULL AND status = 'active';
 ```
@@ -222,7 +254,9 @@ At <10 k rows the seq scan cost for an occasional sort is negligible.
 #### Candidate D — `documents_asset_type_idx`
 
 ```sql
-CREATE INDEX CONCURRENTLY documents_asset_type_idx
+-- In-migration: CREATE INDEX IF NOT EXISTS (plain).
+-- Optional manual pre-step for zero-downtime:
+CREATE INDEX CONCURRENTLY IF NOT EXISTS documents_asset_type_idx
     ON registry.documents (asset_id, type_code)
     WHERE deleted_at IS NULL;
 ```
@@ -293,11 +327,12 @@ DROP INDEX CONCURRENTLY IF EXISTS registry.documents_type_active_idx;
 DROP INDEX CONCURRENTLY IF EXISTS registry.documents_asset_type_idx;
 ```
 
-`DROP INDEX CONCURRENTLY` cannot run inside a transaction block. Run these
-statements manually via psql if a rollback is needed outside the Alembic
-`downgrade()` path (see migration `0007_add_filter_indexes.py` downgrade
-section for the Alembic-managed path, which uses `op.execute` with
-`transaction_per_migration = False`).
+`DROP INDEX CONCURRENTLY` cannot run inside a transaction block, so it is only
+needed for a non-locking drop on a large table — run the statements above
+manually via psql in that case. The Alembic `downgrade()` in
+`0007_add_filter_indexes.py` uses plain `DROP INDEX IF EXISTS` (inside the
+normal transaction), which is the right choice at the current scale: each drop
+is instantaneous and the brief lock is irrelevant on <10 k rows.
 
 ### Backup restore
 
@@ -382,8 +417,8 @@ Options at that point:
 2. Add a separate `jsonb_ops` GIN alongside `jsonb_path_ops`.
 3. Materialise popular key presence into a generated column.
 
-None of these are needed now. Document as an open question and revisit if
-key-existence filtering appears in v1.23.0 requirements.
+None of these are needed now. Tracked as an open question; revisit if
+key-existence filtering appears in a future requirement.
 
 ---
 
@@ -397,15 +432,18 @@ key-existence filtering appears in v1.23.0 requirements.
    for the registry schema, consistent with grants in migrations 0001 of each
    service.
 
-3. `CREATE INDEX CONCURRENTLY` is used for all new registry indexes. At the
-   current row count (<100 rows in prod) this adds no measurable overhead, but
-   it establishes the correct pattern for when the table grows, and avoids any
-   theoretical lock on concurrent reads during the migration window.
+3. The registry migration creates all three indexes with plain
+   `CREATE INDEX IF NOT EXISTS` inside the normal Alembic transaction. At the
+   current row count (<100 rows in prod) this takes milliseconds and holds a
+   brief `ShareLock` only. `CONCURRENTLY` is reserved for the optional manual
+   pre-step that becomes worthwhile once the table is large.
 
-4. `CREATE INDEX CONCURRENTLY` cannot run inside a transaction block. The
-   registry migration file sets `transaction_per_migration = False` via an
-   `alembic_version` sentinel in the file header and uses `op.execute()`
-   directly. See migration `0007_add_filter_indexes.py` for the exact pattern.
+4. `CREATE INDEX CONCURRENTLY` cannot run inside a transaction block, and
+   `env.py` does not set `transaction_per_migration = False`. So the shipped
+   `0007_add_filter_indexes.py` does **not** use `CONCURRENTLY`; it relies on
+   `IF NOT EXISTS` so that an operator can pre-create the indexes concurrently
+   by hand and then have the migration skip them cleanly (Option A in the
+   migration header).
 
 5. The `filter_json` column stores the serialised filter state as defined by
    the frontend (TanStack Table column-filters shape). The exact schema is

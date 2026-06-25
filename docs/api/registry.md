@@ -53,16 +53,24 @@ Tokens are stored in-memory by the SPA (`AuthProvider`). On expiry, the SPA sile
 
 | Operation | viewer | editor | admin |
 |---|---|---|---|
-| List / get documents, assets, document types, exports | yes | yes | yes |
+| List / get documents, companies, document types, exports | yes | yes | yes |
 | Create / patch document | no | yes | yes |
 | Archive document (single or bulk) | no | yes | yes |
 | Restore document | no | no | yes |
 | Upload / delete attachment | no | yes | yes |
 | Download attachment | yes | yes | yes |
 | Request / poll / download export | yes | yes | yes |
-| Get document or asset history | yes | yes | yes |
-| Create / patch / archive asset | no | no | yes |
+| Get document or company history | yes | yes | yes |
+| **Create company** | no | **yes** | yes |
+| Patch / archive company | no | no | yes |
+| Change company status | no | yes¹ | yes |
 | Create / patch document type | no | no | yes |
+| Edit document-type custom-field schema | no | no | yes |
+| Bulk import registry from Excel | no | no | yes |
+
+¹ `PATCH /assets/{asset_id}/status` is gated at editor+admin in `web-bff` but admin-only in `registry-service`. See the [known role mismatch](#patch-apiv1assetsasset_idstatus) note.
+
+> **Company creation is editor+admin since 2.3.0.** This enables inline company creation from the document-creation form (issue #5). Editing and archiving a company remain admin-only.
 
 ---
 
@@ -101,7 +109,7 @@ Validation errors return 422 with a list of field-level problems:
 | 400 | Malformed request (e.g., bulk archive > 100 rows) |
 | 401 | Missing or expired access JWT |
 | 403 | Authenticated but insufficient role |
-| 404 | Resource not found (or soft-deleted, for PATCH on archived assets) |
+| 404 | Resource not found (or soft-deleted, e.g. PATCH on an archived company) |
 | 409 | Conflict (duplicate name, operation invalid for current state) |
 | 410 | Export file has been purged (TTL expired) |
 | 413 | Attachment exceeds 25 MiB |
@@ -114,23 +122,50 @@ Validation errors return 422 with a list of field-level problems:
 
 ### GET /api/v1/documents
 
-List active documents. All query parameters are forwarded verbatim from the BFF to `registry-service`.
+List active documents. All query parameters are forwarded verbatim from the BFF to `registry-service`. Repeated keys are preserved end-to-end — the BFF forwards via `multi_items()`, so multi-select filters work as `?asset_ids=a&asset_ids=b`.
 
 **Roles:** viewer, editor, admin
 
-**Query parameters:**
+**Common parameters:**
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `q` | string | — | Full-text search across asset name, document number, type display name, notes. Min 2 chars; shorter queries are ignored by the frontend. Uses `pg_trgm` GIN index. |
-| `asset_id` | UUID | — | Filter by partner company. |
-| `type_code` | string | — | Filter by document type code (e.g., `contract`). |
-| `status` | string | — | Filter by computed urgency: `ok` \| `soon` \| `overdue` \| `archived`. |
-| `include_archived` | bool | `false` | Include soft-deleted rows. |
+| `q` | string | — | Full-text search across company name, document number, type display name, notes. Min 2 chars (shorter queries are dropped by the frontend). Uses `pg_trgm` GIN index. |
 | `sort` | string | — | Column name to sort by (e.g., `expiry_date`). Multi-column: comma-separated (e.g., `type_code,expiry_date`). |
 | `dir` | string | — | Sort direction: `asc` \| `desc`. Multi-column: comma-separated to match `sort`. |
+| `include_archived` | bool | `false` | Include soft-deleted rows. |
 | `offset` | int | `0` | Pagination offset. |
 | `limit` | int | `100` | Page size (max 1000). |
+
+**Filter parameters** (most accept repeated values for multi-select):
+
+| Parameter | Type | Description |
+|---|---|---|
+| `status` | string[] | Computed urgency: `ok` \| `soon` \| `overdue` \| `archived`. Repeatable. |
+| `asset_id` | UUID | Single-company filter (legacy). |
+| `asset_ids` | UUID[] | Filter by one or more companies. |
+| `type_code` | string | Single document-type filter (legacy). |
+| `type_codes` | string[] | Filter by one or more document-type codes. |
+| `responsible_user_ids` | UUID[] | Filter by responsible user(s). |
+| `responsible_is_null` | bool | Documents with no responsible user. |
+| `doc_status` | string[] | Raw document status (`active` \| `archived`). |
+| `asset_status` | string[] | Company functional status (`active` \| `liquidating` \| `archived`). Legacy alias `asset_activity` is also accepted. |
+| `inn` | string | Filter by the company INN. |
+| `expiry_from` / `expiry_to` | date | Expiry-date range bounds. |
+| `expiry_null` | bool | Documents without an expiry date (perpetual). |
+| `expiry_dates` | string[] | Specific expiry dates; sentinel `__NULL__` matches perpetual documents. |
+| `number_is_null` | bool | Documents without a number. |
+| `updated_from` / `updated_to` | datetime | Last-updated range bounds. |
+
+**Custom-field filters** (per [ADR-0007](../adr/0007-flexible-document-fields.md)): filter on any custom-field key declared in a document type's schema.
+
+| Form | Description |
+|---|---|
+| `cf_<key>=<value>` | Equality / containment match. |
+| `cf_<key>_from` / `cf_<key>_to` | Range bounds (e.g., for date or number custom fields). |
+| `cf_<key>_is_null=true` | The custom field is missing or empty. |
+
+Keys are validated against the union of all document-type schemas; unknown `cf_*` keys are silently ignored.
 
 **Response 200** — array of `Document` objects:
 
@@ -139,14 +174,18 @@ List active documents. All query parameters are forwarded verbatim from the BFF 
   {
     "id": "018e4c1a-1234-7abc-8def-000000000001",
     "asset_id": "018e4c1a-0000-7000-8000-000000000001",
+    "asset_name": "ООО Ромашка",
     "type_code": "contract",
+    "type_display_name": "Договор",
     "number": "ДГ-2026-99",
     "issue_date": "2026-01-01",
     "expiry_date": "2027-01-01",
     "responsible_user_id": "018e4c1a-0000-7000-8000-000000000042",
+    "responsible_user_name": "Иванов И. И.",
     "status": "active",
     "urgency_status": "ok",
     "notes": null,
+    "custom_field_values": { "jurisdiction": "RU" },
     "created_by": "018e4c1a-0000-7000-8000-000000000042",
     "updated_by": "018e4c1a-0000-7000-8000-000000000042",
     "created_at": "2026-05-07T09:00:00Z",
@@ -156,7 +195,7 @@ List active documents. All query parameters are forwarded verbatim from the BFF 
 ]
 ```
 
-`urgency_status` is computed server-side at read time from `expiry_date` and `deleted_at` (see [Status computation](#status-computation-algorithm)). `status` carries the raw DB value (`active` | `archived`). The SPA uses `urgency_status` for badge rendering.
+`urgency_status` is computed server-side at read time from `expiry_date` and `deleted_at` (see [Status computation](#status-computation-algorithm)). `status` carries the raw DB value (`active` | `archived`). The SPA uses `urgency_status` for badge rendering. `asset_name` and `type_display_name` are denormalized in batch (no N+1); `responsible_user_name` is resolved by the BFF/frontend, not by `registry-service`. `custom_field_values` holds the document's per-type custom fields (empty object when none).
 
 **Related stories:** US-1, US-2, US-3
 
@@ -178,24 +217,27 @@ Create a new document.
   "issue_date": "2026-01-01",
   "expiry_date": "2027-01-01",
   "responsible_user_id": "018e4c1a-0000-7000-8000-000000000042",
-  "notes": "Тестовый договор"
+  "notes": "Тестовый договор",
+  "custom_field_values": { "jurisdiction": "RU" }
 }
 ```
 
 | Field | Type | Required | Constraints |
 |---|---|---|---|
-| `asset_id` | UUID | yes | Must reference an active (non-deleted) asset. |
+| `asset_id` | UUID | yes | Must reference an active (non-deleted) company. |
 | `type_code` | string | yes | Must match a known `document_types.code`. Max 64 chars. |
 | `number` | string | no | Max 500 chars. |
 | `issue_date` | date (ISO-8601) | no | — |
 | `expiry_date` | date (ISO-8601) | no | If omitted, `urgency_status` = `ok` permanently; no notification schedule created. |
 | `responsible_user_id` | UUID | no | Must reference an active user (enforced downstream by orphan-watch). |
 | `notes` | string | no | Max 10 000 chars. |
+| `custom_field_values` | object | no | Per-type custom fields. Validated against the document type's `custom_field_schema` ([ADR-0007](../adr/0007-flexible-document-fields.md)). Defaults to `{}`. |
 
 **Response 201** — created `Document` object (same shape as list item).
 
 **Errors:**
-- `422` — `asset_id` references a soft-deleted asset (`"Asset not found or archived"`), unknown `type_code`, or `notes` > 10 000 chars.
+- `404` — `asset_id` references a soft-deleted or missing company (`"Asset not found or archived"`), or unknown `type_code`.
+- `422` — `notes` > 10 000 chars, or `custom_field_values` fails schema validation.
 
 **Audit event emitted:** `registry.document.created.v1` on Redis Stream `registry.documents`
 
@@ -237,29 +279,86 @@ Get document detail including attachments.
 
 ---
 
+### GET /api/v1/documents/{document_id}/attachments
+
+List attachments for a document. The same data is also embedded in `GET /documents/{id}`; this dedicated endpoint backs the document detail drawer (US-9).
+
+**Roles:** viewer, editor, admin
+
+**Path parameter:** `document_id` (UUID)
+
+**Response 200** — array of `Attachment` objects (same shape as the upload response).
+
+**Related stories:** US-9
+
+---
+
+### GET /api/v1/documents/distinct-values
+
+Return the top-N distinct values for a filterable column. Backs the column-filter autocomplete in the registry. Results are cached in Redis (TTL 300 s) with a DB fallback.
+
+**Roles:** viewer, editor, admin
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `field` | string | — | System field (`number`, `asset_name`, `type_code`) or custom field `cf_<key>`. Required. |
+| `q` | string | — | Optional case-insensitive substring filter. |
+| `limit` | int | `100` | Max distinct values (max 500). |
+
+**Response 200:**
+
+```json
+{
+  "field": "type_code",
+  "values": [ { "value": "contract", "count": 42 } ],
+  "total_distinct": 7,
+  "truncated": false,
+  "null_count": 0
+}
+```
+
+`total_distinct` counts all unique values (ignoring `q` and `limit`); `truncated` is `true` when the result hit `limit`. For custom-field filters, `null_count` is the number of documents where the field is missing or empty.
+
+**Errors:** `422` — unknown field, or distinct values requested for an unsupported date field.
+
+---
+
 ### PATCH /api/v1/documents/{document_id}
 
-Inline-edit a single field of a document.
+Partial-object patch: send only the fields the user changed.
 
 **Roles:** editor, admin
 
 **Path parameter:** `document_id` (UUID)
 
-**Request body (single-field patch):**
+**Request body** — any subset of the patchable fields:
 
 ```json
-{ "field": "number", "value": "ДГ-2026-100" }
+{ "number": "ДГ-2026-100", "expiry_date": "2028-01-01" }
 ```
 
-`field` must be a patchable field name. `value` is any JSON-serializable value appropriate for the field. Required fields (e.g., `asset_id`) cannot be set to `null`.
+| Field | Notes |
+|---|---|
+| `asset_id` | Cannot be set to `null`. |
+| `type_code` | Cannot be set to `null`. Applied before `custom_field_values` so orphan custom-field keys are pruned against the new type's schema. |
+| `number` | — |
+| `issue_date` | — |
+| `expiry_date` | — |
+| `responsible_user_id` | — |
+| `notes` | — |
+| `custom_field_values` | Replaces the whole object; validated against the type's schema. |
+
+The patchable-field whitelist is enforced server-side (`inline_edit_document._PATCHABLE_FIELDS`) regardless of which keys arrive in the body. At least one field must be present. The handler iterates the supplied fields and applies each through `InlineEditDocument`, emitting one `registry.document.updated.v1` event per changed field; all updates run in a single transaction (partial failure rolls back the whole batch).
 
 **Response 200** — updated `Document` object.
 
 **Errors:**
 - `404` — document not found.
-- `422` — invalid field name or value fails validation.
+- `422` — no patchable field supplied, non-patchable field name, or a value fails validation.
 
-**Audit event emitted:** `registry.document.updated.v1` with `field`, `before`, `after`, `actor_id`, `request_id`.
+**Audit event emitted:** one `registry.document.updated.v1` per field, each with `field`, `before`, `after`, `actor_id`, `request_id`.
 
 **Related stories:** US-4, US-22
 
@@ -305,7 +404,7 @@ Operation is idempotent: restoring an active document returns 200 without change
 
 **Errors:** `403` — non-admin role.
 
-**Audit event emitted:** `registry.document.updated.v1` with `field="deleted_at"`, `before=<timestamp>`, `after=null`.
+**Audit event emitted:** `registry.document.restored.v1` (payload carries `document_id`).
 
 **Related stories:** US-7
 
@@ -337,17 +436,19 @@ Archive up to 100 documents in a single database transaction.
 - `400` — more than 100 IDs submitted (`"Bulk operation limited to 100 rows"`).
 - `403` — viewer role.
 
-**Audit events emitted:** one `registry.document.archived.v1` per newly archived document, all within the same transaction.
+**Audit event emitted:** a single `registry.document.bulk_archived.v1` (payload carries the submitted `document_ids` and an `archived` `count`); emitted only when at least one row was newly archived.
 
 **Related stories:** US-23
 
 ---
 
-## Assets
+## Companies
+
+Companies are the partner organisations a document belongs to. The internal code/DB identifier is `asset` (do not confuse the API path `/assets` with the user-facing term «Компания»).
 
 ### GET /api/v1/assets
 
-List active partner companies. Sorted alphabetically by name.
+List active companies. Sorted alphabetically by name.
 
 **Roles:** viewer, editor, admin
 
@@ -368,6 +469,7 @@ List active partner companies. Sorted alphabetically by name.
     "name": "ООО Ромашка",
     "inn": "7701234567",
     "notes": null,
+    "status": "active",
     "created_at": "2026-01-01T00:00:00Z",
     "updated_at": "2026-01-01T00:00:00Z",
     "deleted_at": null
@@ -375,7 +477,7 @@ List active partner companies. Sorted alphabetically by name.
 ]
 ```
 
-Archived assets (`deleted_at IS NOT NULL`) are excluded by default.
+Archived companies (`deleted_at IS NOT NULL`) are excluded by default. `status` is the functional lifecycle state — `active` | `liquidating` («В процессе ликвидации») | `archived` — and is independent of the `deleted_at` soft-delete signal: archiving sets both, while a company can be marked `liquidating` while still active.
 
 **Related stories:** US-12
 
@@ -383,9 +485,11 @@ Archived assets (`deleted_at IS NOT NULL`) are excluded by default.
 
 ### POST /api/v1/assets
 
-Create a partner company.
+Create a company.
 
-**Roles:** admin only
+**Roles:** editor, admin
+
+Editors can create companies since 2.3.0 (inline creation from the document-creation form, issue #5). Editing and archiving remain admin-only.
 
 **Request body:**
 
@@ -393,17 +497,23 @@ Create a partner company.
 { "name": "ООО Новая Компания", "inn": "7701234567", "notes": "" }
 ```
 
+Without an INN:
+
+```json
+{ "name": "ООО Без ИНН" }
+```
+
 | Field | Type | Required | Constraints |
 |---|---|---|---|
-| `name` | string | yes | 1–500 chars. Unique among active assets (partial unique index on `deleted_at IS NULL`). |
-| `inn` | string | no | 10 or 12 digits. Digits only. ФНС checksum validated in `inn_policy.py`. |
+| `name` | string | yes | 1–500 chars. Unique among active companies (partial unique index on `deleted_at IS NULL`). |
+| `inn` | string | no | 10 or 12 digits. An empty or whitespace-only value is normalized to `null` server-side (not rejected). A supplied INN is validated for digits-only and the ФНС checksum (`inn_policy.py`). |
 | `notes` | string | no | — |
 
 **Response 201** — created `Asset` object.
 
 **Errors:**
-- `409` — duplicate name among active assets (`"Компания с таким названием уже существует"`).
-- `422` — invalid INN format.
+- `409` — duplicate name among active companies (`"Компания с таким названием уже существует"`).
+- `422` — invalid INN format or failed checksum.
 
 **Audit event emitted:** `registry.asset.created.v1`
 
@@ -413,18 +523,18 @@ Create a partner company.
 
 ### PATCH /api/v1/assets/{asset_id}
 
-Update asset name, INN, or notes.
+Update company name, INN, or notes.
 
 **Roles:** admin only
 
 **Path parameter:** `asset_id` (UUID)
 
-**Request body:** same fields as `POST`, all optional (partial update).
+**Request body:** same fields as `POST`, all optional (partial update). The same INN normalization applies.
 
 **Response 200** — updated `Asset` object.
 
 **Errors:**
-- `404` — asset not found or already archived.
+- `404` — company not found or already archived.
 - `422` — invalid INN format.
 
 **Audit event emitted:** `registry.asset.updated.v1` with field-level `before`/`after`.
@@ -433,9 +543,37 @@ Update asset name, INN, or notes.
 
 ---
 
+### PATCH /api/v1/assets/{asset_id}/status
+
+Change a company's functional status: `active` | `liquidating` | `archived`.
+
+**Roles:** editor, admin (BFF) — see role-mismatch note below
+
+**Path parameter:** `asset_id` (UUID)
+
+**Request body:**
+
+```json
+{ "status": "liquidating" }
+```
+
+Setting `archived` also sets `deleted_at` and cascade-archives the company's active documents (dual-signal model). Moving back to `active` or `liquidating` clears `deleted_at`; documents are not auto-restored — restore them individually.
+
+> **Known role mismatch (risk).** `web-bff` gates this endpoint at editor+admin, while `registry-service` enforces admin-only (`RequireAdmin`). An editor request therefore passes the BFF gate but is rejected (403) downstream. Treat this as admin-only in practice until the two services are reconciled.
+
+**Response 200** — updated `Asset` object.
+
+**Errors:**
+- `403` — insufficient role (editor blocked at `registry-service`).
+- `422` — invalid status value.
+
+**Audit event emitted:** `registry.asset.status_changed.v1` (payload carries `before`, `after`, `cascaded_document_count`).
+
+---
+
 ### PATCH /api/v1/assets/{asset_id}/archive
 
-Soft-delete an asset and cascade-archive all its active documents.
+Soft-delete a company and cascade-archive all its active documents.
 
 **Roles:** admin only
 
@@ -451,7 +589,7 @@ Soft-delete an asset and cascade-archive all its active documents.
 
 **Errors:** `403` — non-admin.
 
-**Audit events emitted:** `registry.asset.updated.v1` (asset archived) + one `registry.document.archived.v1` per cascaded document, all in the same transaction. The asset event payload includes `cascaded_document_count`.
+**Audit event emitted:** a single `registry.asset.status_changed.v1` (`archive_asset` delegates to `ChangeAssetStatus(status='archived')`). The document cascade is a bulk UPDATE with no per-document events; the count is carried in the asset event payload as `cascaded_document_count`.
 
 **Related stories:** US-15
 
@@ -459,13 +597,13 @@ Soft-delete an asset and cascade-archive all its active documents.
 
 ### GET /api/v1/assets/{asset_id}/history
 
-Returns the audit event log for an asset. Proxied to `audit-service`.
+Returns the audit event log for a company. Proxied to `audit-service`.
 
 **Roles:** viewer, editor, admin
 
 **Query parameters:** `limit` (default 50, max 200).
 
-**Response 200** — array of audit event objects (schema defined by `audit-service`; see `docs/api/audit.md` when available).
+**Response 200** — array of audit event objects (schema defined by `audit-service`).
 
 **Related stories:** US-19
 
@@ -489,13 +627,16 @@ List all document types. Available to all roles; used to populate the type dropd
     "pre_notice_days": [30, 14, 7, 1],
     "notify_in_day": true,
     "overdue_every_days": 7,
+    "custom_field_schema": [
+      { "key": "jurisdiction", "display_name": "Юрисдикция", "type": "text", "required": false, "options": null }
+    ],
     "created_at": "2026-01-01T00:00:00Z",
     "updated_at": "2026-01-01T00:00:00Z"
   }
 ]
 ```
 
-`pre_notice_days` — sorted list of positive integers indicating how many calendar days before `expiry_date` a pre-notice notification is sent.
+`pre_notice_days` — sorted list of positive integers indicating how many calendar days before `expiry_date` a pre-notice notification is sent. `custom_field_schema` declares the type's custom fields ([ADR-0007](../adr/0007-flexible-document-fields.md)); it is an empty list when none are configured.
 
 **Related stories:** US-16
 
@@ -555,6 +696,40 @@ Update an existing document type's notification configuration. The `code` in the
 **Audit event emitted:** `registry.document_type.upserted.v1`
 
 **Related stories:** US-17
+
+---
+
+### GET /api/v1/admin/document-types/{type_code}/custom-fields
+
+Read the custom-field schema for a document type ([ADR-0007](../adr/0007-flexible-document-fields.md)).
+
+**Roles:** admin only
+
+**Response 200:**
+
+```json
+{
+  "fields": [
+    { "key": "jurisdiction", "display_name": "Юрисдикция", "type": "text", "required": false, "options": null }
+  ]
+}
+```
+
+Each field's `type` is one of `text` | `number` | `date` | `enum`; `options` is populated only for `enum`.
+
+---
+
+### PUT /api/v1/admin/document-types/{type_code}/custom-fields
+
+Replace the custom-field schema for a document type (full replace, not partial).
+
+**Roles:** admin only (re-MFA enforced at the BFF per [ADR-0006](../adr/0006-super-admin-role-and-system-panel.md) §5)
+
+**Request body:** `{ "fields": [ { "key", "display_name", "type", "required", "options" } ] }`. `key` matches `^[a-z][a-z0-9_]{0,63}$`; `type` is `text` | `number` | `date` | `enum`.
+
+**Response 200** — the updated schema (same shape as GET).
+
+**Audit event emitted:** `registry.document_type.fields_updated.v1`
 
 ---
 
@@ -618,7 +793,7 @@ The BFF validates the Content-Length before forwarding (defense-in-depth). `regi
 
 **Audit event emitted:** `registry.document.updated.v1` with `actor_id` of the uploader.
 
-**Note:** The attachment list is returned inline in `GET /documents/{id}`; there is no separate attachments-list endpoint.
+**Note:** The attachment list is returned inline in `GET /documents/{id}` and also via the dedicated [`GET /documents/{id}/attachments`](#get-apiv1documentsdocument_idattachments) endpoint.
 
 **Related stories:** US-9
 
@@ -669,7 +844,9 @@ Hard-delete an attachment. The file is removed from disk; the `registry.attachme
 
 ### POST /api/v1/exports
 
-Request an asynchronous `.xlsx` export. The export captures a snapshot of the registry **at job start time** (not when the POST was received, but when the ARQ worker begins executing). This is per acceptance decision Q2 in requirements/registry-crud.md.
+Request an asynchronous `.xlsx` export. The export captures a snapshot of the registry **at job start time** (not when the POST was received, but when the ARQ worker begins executing) — per registry-CRUD acceptance decision Q2.
+
+The SPA posts to the legacy alias `POST /api/v1/exports/xlsx`, which is identical in body shape and behaviour to `POST /api/v1/exports`.
 
 **Roles:** viewer, editor, admin
 
@@ -744,6 +921,42 @@ Download a completed export file.
 
 ---
 
+## Import
+
+### POST /api/v1/imports/xlsx
+
+Bulk-import documents and companies from a corporate Excel registry (`.xlsx` / `.xlsm`). Returns a JSON report with counts and per-row errors.
+
+**Roles:** admin only
+
+**Request:** `multipart/form-data` with a single `file` field. Size limit 25 MiB.
+
+The header row is matched case-insensitively against known column names. For backward compatibility with pre-2.2.0 spreadsheets, the company column accepts **both «Компания» and «Контрагент»** as headers (along with other aliases). Companies and document types are upserted; documents are matched by `(asset_id, type_code, issue_date)` for idempotent re-imports.
+
+**Response 200:**
+
+```json
+{
+  "ok": true,
+  "filename": "registry.xlsx",
+  "summary": {
+    "total_rows": 120,
+    "assets_created": 8,
+    "assets_reused": 40,
+    "types_created": 2,
+    "documents_created": 110,
+    "documents_updated": 10,
+    "skipped": 0,
+    "errors_count": 1
+  },
+  "errors": [ { "row": 17, "company": "ООО Ромашка", "document": "Договор", "error": "..." } ]
+}
+```
+
+Errors are capped at 50 in the response. On a fatal parse error the response is `{ "ok": false, "error": "..." }`.
+
+---
+
 ## History
 
 History endpoints proxy to `audit-service`. They accept the actor's JWT and forward it with a service-scoped internal JWT.
@@ -783,11 +996,43 @@ If `audit-service` returns 503, the BFF propagates the error. The SPA shows «И
 
 ### GET /api/v1/assets/{asset_id}/history
 
-Return the audit event log for an asset. Same shape and parameters as the document history endpoint.
+Return the audit event log for a company. Same shape and parameters as the document history endpoint.
 
 **Roles:** viewer, editor, admin
 
 **Related stories:** US-19
+
+---
+
+### GET /api/v1/events
+
+Generic audit-events query, proxied to `audit-service` (`/api/v1/audit/events`). The SPA's `getDocumentHistory` / `getAssetHistory` call this with `entity_type` + `entity_id`.
+
+**Roles:** viewer, editor, admin (row-level visibility enforced upstream)
+
+**Query parameters:** `entity_type`, `entity_id`, `event_type`, `actor`, `from`, `to`, `limit` (default 50, max 200). All optional except as required by the caller's query.
+
+**Response 200** — array of audit event objects (same shape as the history endpoints).
+
+---
+
+## Preferences
+
+Registry column layout is a tenant-wide setting: any authenticated user can read it, but only an admin can change it.
+
+### GET /api/v1/preferences/column-order · PUT /api/v1/admin/preferences/column-order
+
+Read or replace the registry column order and pinned column.
+
+- **GET** — any authenticated user.
+- **PUT** — admin only. Body: `{ "order": ["asset_name", "type_code", ...], "pinned_column_id": "asset_name" }`. `order` must be a list (`400` otherwise); `pinned_column_id` is optional.
+
+### GET /api/v1/preferences/column-labels · PUT /api/v1/admin/preferences/column-labels
+
+Read or replace custom column display labels.
+
+- **GET** — any authenticated user.
+- **PUT** — admin only. Body: `{ "labels": { "<column_id>": "<label>" } }` (`400` if `labels` is not an object).
 
 ---
 
@@ -800,7 +1045,7 @@ Search uses PostgreSQL's `pg_trgm` extension via GIN indexes:
 | `assets_name_trgm_idx` | `registry.assets` | `name` |
 | `documents_number_trgm_idx` | `registry.documents` | `number` |
 
-Queries shorter than 2 characters bypass the server (client-side guard in the SPA). The `pg_trgm` similarity threshold is the PostgreSQL default (0.3). Queries that fall below the threshold fall back to `ILIKE '%query%'`. Results are ranked by similarity score descending.
+The server switches strategy on query length: queries of **3 or more characters** use a `pg_trgm` similarity match with an explicit threshold of `func.similarity(...) > 0.1`, while shorter queries (**< 3 characters**) fall back to `ILIKE '%query%'`. (The SPA additionally drops very short queries client-side.) Similarity-DESC ranking is applied only to the **Companies** list (`GET /assets`); document search matches on `number ILIKE` OR a similarity subquery on the company name and is not ordered by similarity score.
 
 p95 latency target: < 300 ms over 100 000 rows on the production Postgres instance (NFR §6).
 
@@ -825,7 +1070,7 @@ else:
     return "ok"
 ```
 
-Boundary: a document with `expiry_date = today` returns `"soon"` (0 days remaining, not overdue). Calendar days, no holiday/weekend shift (acceptance decision Q4).
+Boundary: a document with `expiry_date = today` returns `"soon"` (0 days remaining, not overdue). Calendar days, no holiday/weekend shift (per registry-CRUD acceptance decision Q4).
 
 ---
 
@@ -852,4 +1097,4 @@ Boundary: a document with `expiry_date = today` returns `"soon"` (0 days remaini
 
 ---
 
-_Last updated: 2026-05-07_
+_Last updated: 2026-06-25 · соответствует продукту 2.4.0_

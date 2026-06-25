@@ -106,7 +106,9 @@ export function AssetDialog({ open, asset, onClose, onSubmit }: AssetDialogProps
   const handleFormSubmit = handleSubmit(async (values) => {
     await onSubmit({
       name: values.name,
-      inn: values.inn ?? null,
+      // ИНН необязателен: пустое/пробельное значение отправляем как null (а не ""),
+      // иначе бэкенд отклонит "" по min_length=10 и поле станет фактически обязательным.
+      inn: values.inn?.trim() || null,
       notes: values.notes ?? null,
     });
     reset();

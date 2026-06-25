@@ -1,15 +1,23 @@
 # System Actors
 
-Binding reference for ADR-0002 acceptance decision #2: named UUIDv7 constants
-per system actor. Audit events produced by automated workers must carry a
-stable, human-identifiable `actor_id` so incident triage can distinguish
-human actions from system actions in the `audit.events` log.
+Binding reference for ADR-0002 acceptance decision #2: pinned, deterministic
+UUIDv7-style constants per system actor (hand-crafted — true `uuidv7()` lands
+in PG17). Audit events produced by automated workers must carry a stable,
+human-identifiable `actor_id` so incident triage can distinguish human actions
+from system actions in the `audit.events` log.
+
+> **Where they live:** these UUIDs are pinned in the shared kernel
+> (`lotsman_shared.actors`) and inserted into `auth.users` by the auth-service
+> Alembic migration `0002_seed_system_actors.py`. The two must stay in lockstep.
+
+_Last updated: 2026-06-25_
 
 ## Reserved UUIDs
 
-All system actors are inserted into `auth.users` with `is_active = false`
-and the sentinel password hash `SYSTEM` (argon2id never produces this string).
-They cannot log in and hold no JWT-issuable sessions.
+All system actors are inserted into `auth.users` with `role = 'viewer'`,
+`is_active = false`, and the sentinel password hash `SYSTEM` (argon2id never
+produces this string); `totp_secret_enc` is a single zero byte. They cannot
+log in and hold no JWT-issuable sessions.
 
 | Constant name | UUID | auth.users.email | Purpose |
 |---|---|---|---|
@@ -38,8 +46,9 @@ randomly at startup), we chose hand-crafted values in the style:
 - Variant bits `8000` conform to RFC 4122 variant 1.
 - The trailing `N` is the actor ordinal.
 
-These values are pinned in `infra/postgres/init/02-system-actors.sql` and
-in the shared kernel (`lotsman_shared.actors` module, per ADR-0002 §4).
+These values are pinned in the auth-service Alembic migration
+`0002_seed_system_actors.py` and in the shared kernel (`lotsman_shared.actors`
+module, per ADR-0002 §4).
 
 ## Shared kernel constants
 
@@ -61,11 +70,19 @@ the UUIDs inline.
 
 ## Startup order note
 
-`02-system-actors.sql` is safe to run before Alembic migrations complete
-(it guards with an existence check and emits NOTICE if `auth.users` is
-missing). The canonical execution order is:
+System actors are seeded **inside** `alembic upgrade head`, not by an init
+script — the `infra/postgres/init/` directory holds only `00-extensions.sql`,
+`01-schemas-and-roles.sql`, and `03-set-role-passwords.sh` (there is no
+`02-system-actors.sql`). The actors must be inserted *after* `auth.users`
+exists, which is why this is a versioned data migration rather than init SQL.
+
+Canonical execution order:
 
 1. `00-extensions.sql` — create extensions
 2. `01-schemas-and-roles.sql` — create schemas and roles
-3. `alembic upgrade head` (all four services, in any order)
-4. `02-system-actors.sql` — insert system actors (or `make seed` which includes this)
+3. `alembic upgrade head` (all services, in any order) — the auth-service
+   migration `0002_seed_system_actors` inserts the five named actors
+   idempotently (`ON CONFLICT (id) DO NOTHING`)
+4. `make seed` — *optional.* Loads registry demo data
+   (`registry_service.scripts.seed`). It does **not** touch `auth.users` and
+   does **not** seed system actors; those already exist after step 3.

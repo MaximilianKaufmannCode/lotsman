@@ -2,19 +2,26 @@
 
 ## Supported versions
 
-Security fixes are provided for the latest released version of Лоцман
-(`lotsman`). Older versions are not maintained.
+Only the latest released minor of the `2.x` line receives security fixes.
+The current release is **2.4.0** (source of truth: `web/package.json`).
+Older minors are not maintained — upgrade to the latest `2.x` release.
 
-| Version | Supported |
-|---------|-----------|
-| latest  | ✅        |
-| older   | ❌        |
+| Version          | Supported |
+|------------------|-----------|
+| 2.4.x (latest)   | ✅        |
+| < 2.4            | ❌        |
 
 ## Reporting a vulnerability
 
 **Please do not report security vulnerabilities through public issues.**
 
-Email **security@lotsman.example.com** with:
+Use one of these private channels:
+
+- **Preferred:** GitHub private vulnerability reporting — open a draft advisory
+  at <https://github.com/MaximilianKaufmannCode/lotsman/security/advisories/new>.
+- **Email:** **maximilian.kaufmann@microcode.pro**.
+
+Please include:
 
 - a description of the issue and its impact;
 - steps to reproduce (a proof-of-concept if possible);
@@ -40,3 +47,7 @@ When deploying:
 - generate your own RS256 JWT key pair and strong database credentials
   (see [docs/deployment/](docs/deployment/));
 - terminate TLS at the proxy and keep the services on a private network.
+
+---
+
+_Last updated: 2026-06-25_

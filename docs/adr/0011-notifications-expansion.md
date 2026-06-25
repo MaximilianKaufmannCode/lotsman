@@ -67,3 +67,23 @@ default channel so email volume stays low.
   feature; independent group is safer.
 - *Normalized prefs matrix table* — rejected for now: overkill for 2–4 users; JSONB is simpler and matches house style.
 - *Send every event immediately by email to everyone* — rejected: EWS rate-limit + inbox spam (per-field edits).
+
+## Amendment (2026-06-25) — email HTML rework (v2.4.0)
+
+A presentation-layer follow-up to this decision, not a change to it. All email
+notifications (deadline reminders, lifecycle events, and the daily digest) now
+render through a single branded HTML template instead of plain text:
+
+- status-coloured accent (🟢 ok / 🟠 soon / 🔴 overdue), an at-a-glance details
+  block (company · type · number · due date · days left/overdue · owner), one
+  primary **«Открыть документ»** CTA, human dates with Russian day pluralisation,
+  a `prefers-color-scheme` dark mode, and a plain-text fallback for clients
+  without HTML;
+- new code: `notification_service.infrastructure.email_html.render_notification_email`
+  and `notification_service.infrastructure.humanize` (RU date + day pluralisation),
+  both unit-tested (`test_email_html`, `test_humanize`);
+- template copy updated by a reversible **data** migration
+  `0009_richer_email_templates` (no schema change; downgrade restores prior text).
+
+Channels (Email / Telegram / Dion) and the D1–D6 architecture above are
+unchanged — Telegram/Dion remain stubs.

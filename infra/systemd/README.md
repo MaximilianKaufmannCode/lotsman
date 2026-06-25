@@ -9,11 +9,17 @@ kept serving the static SPA. See [`docs/deployment/preprod-runbook.md`](../../do
 | File | Installs to | Role |
 |---|---|---|
 | `lotsman.service` | `/etc/systemd/system/` | Boot: `podman pod start pod_lotsman` via the wrapper; graceful stop. |
-| `lotsman-observability.service` | `/etc/systemd/system/` | Boot: start `lotsman_prometheus` + `lotsman_node_exporter` (outside the pod). |
+| `lotsman-observability.service` | `/etc/systemd/system/` | Boot: `podman start lotsman_prometheus lotsman_node_exporter` (siblings of the pod). |
 | `lotsman-watchdog.service` + `.timer` | `/etc/systemd/system/` | Every 2 min: idempotent self-heal of any down pod member. |
 | `../tmpfiles.d/lotsman-docker-sock.conf` | `/etc/tmpfiles.d/` | Recreate `/run/docker.sock` → `/run/podman/podman.sock` at boot (for `system-control`). |
 | `../../scripts/lotsman-pod-up.sh` | `/opt/lotsman/scripts/` | Wrapper used by the boot unit and the watchdog. |
 | `../cron.d/lotsman-backup` | `/etc/cron.d/` | Daily validated `pg_dumpall` via `scripts/backup-pg.sh`. |
+
+> **Observability containers are created elsewhere.** `lotsman-observability.service` only
+> *(re)starts already-created* containers; it never creates them. `lotsman_prometheus` comes from the
+> [`compose.observability.yml`](../compose.observability.yml) overlay (`make obs-up`). `lotsman_node_exporter`
+> is **not** defined in any compose file in this repo — it is provisioned on the host out-of-band — so
+> create it before enabling this unit, or drop it from the unit's `ExecStart`/`ExecStop`.
 
 ## Why a wrapper + watchdog (not `podman-restart.service`)
 
@@ -24,9 +30,15 @@ kept serving the static SPA. See [`docs/deployment/preprod-runbook.md`](../../do
   pod that dies after a successful boot. The **watchdog timer** provides that in-session
   self-heal. `podman pod start` is idempotent, so the watchdog is a no-op on a healthy pod.
 - Success is judged by **web-bff answering on `:8080/healthz`**, never the container
-  healthchecks (which currently probe the wrong port — see runbook follow-ups).
+  healthchecks (which currently probe `:8000` while services listen on 8001–8080 — see
+  [runbook follow-up #3](../../docs/deployment/preprod-runbook.md#follow-ups-deliberately-deferred--need-a-decision--external-resource)).
 
 ## Install
+
+**Prerequisite:** the pod (`pod_lotsman`) and the observability containers must already exist —
+these units start them, they do not create them. Bring them up first: the pod via your normal deploy,
+and `lotsman_prometheus` via `make obs-up` (the [`compose.observability.yml`](../compose.observability.yml)
+overlay). `lotsman_node_exporter` is host-provisioned and not in this repo (see the note above the table).
 
 ```bash
 install -m0755 scripts/lotsman-pod-up.sh scripts/backup-pg.sh scripts/restore-pg.sh /opt/lotsman/scripts/

@@ -10,7 +10,7 @@ All database design documentation for Лоцман lives here.
 | [audit-partitioning.md](audit-partitioning.md) | Monthly RANGE partitioning on audit.events |
 | [outbox-pattern.md](outbox-pattern.md) | Per-service transactional outbox convention and dispatcher contract |
 | [migration-test-plan.md](migration-test-plan.md) | Manual + CI test plan for initial migrations |
-| [saved-filters-and-indexes.md](saved-filters-and-indexes.md) | auth.user_saved_filters DDL + registry.documents index plan for v1.23.0 multi-level filtering |
+| [saved-filters-and-indexes.md](saved-filters-and-indexes.md) | `auth.user_saved_filters` DDL + `registry.documents` index plan for multi-level registry filtering (shipped 2026-05-26 as v1.23.0; product is now 2.4.0) |
 
 ## Schema quick reference
 
@@ -49,3 +49,9 @@ services/<name>/
 The `alembic_version` table is stored in each service's own schema
 (`version_table_schema` set in `env.py`), so the four services do not
 interfere with each other even though they share one Postgres database.
+
+Init scripts under `infra/postgres/init/` run **before** any Alembic table
+exists, so anything that must reference application tables lives in a versioned
+migration instead. The system actors are one example: they are seeded by the
+auth-service migration `0002_seed_system_actors` (after `auth.users` is
+created), not by an init `.sql` — see [system-actors.md](system-actors.md).

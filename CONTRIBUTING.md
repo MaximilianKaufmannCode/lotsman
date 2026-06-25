@@ -36,26 +36,34 @@ cp .env.example .env       # fill in the values
 make dev                   # build, start, migrate, seed
 ```
 
-See the [README](README.md#quickstart-5-minutes) for service URLs and the
-[deployment guide](docs/deployment/README.md) for production.
+See the [README quickstart](README.md#быстрый-старт-5-минут) for service URLs
+and the [deployment guide](docs/deployment/README.md) for production.
 
 ---
 
 ## Branch & commit conventions
 
-Branches:
+Branch off `main` using a `<type>/<scope>` name. Use the short, single-word
+type that matches the change — the same set we use for commits:
 
 ```
-feat/<scope>   fix/<scope>   chore/<scope>   docs/<scope>
+feat/<scope>   fix/<scope>   refactor/<scope>   chore/<scope>
+docs/<scope>   ci/<scope>    ops/<scope>        security/<scope>
 ```
+
+Prefer the short form (`feat/`, not `feature/`) for consistency.
 
 Commits use Conventional-Commits style, imperative present tense, one subject
-line (≤ 72 chars):
+line (≤ 72 chars). The accepted types are **`feat`, `fix`, `refactor`,
+`chore`, `docs`, `ci`, `ops`, `test`**, with a scope in parentheses:
 
 ```
-feat(registry): add document archiving endpoint
-fix(auth): reject expired refresh tokens at login
-docs(deployment): document TLS termination at Nginx
+feat(registry):    add document archiving endpoint
+fix(auth):         reject expired refresh tokens at login
+refactor(web-bff): collapse duplicate fan-out helpers
+docs(deployment):  document TLS termination at Nginx
+ci(security):      pin trivy to a fixed version in the PR gate
+chore(release):    2.4.0
 ```
 
 An optional body (after a blank line) explains *why*, not *what* — the diff
@@ -65,7 +73,7 @@ already shows what changed.
 
 ## Local quality gate
 
-Run this before every push — it is exactly what CI runs:
+Run this before every push — it mirrors the core checks CI runs:
 
 ```bash
 make ci-local        # = make lint + make typecheck + make test
@@ -75,7 +83,9 @@ make ci-local        # = make lint + make typecheck + make test
   integration tests).
 - Frontend: `biome`, `tsc --noEmit`, `vitest`, and Playwright for E2E.
 
-A push that fails `ci-local` will fail CI.
+A push that fails `ci-local` will fail CI. The per-PR security gate
+(`security-pr.yml`: dependency CVEs, IaC, SAST) runs only in CI, not in
+`ci-local` — so a green `ci-local` is necessary but not sufficient.
 
 ### Tests — where they go
 
@@ -99,11 +109,18 @@ truth is the `version` field in `web/package.json`, surfaced in the UI footer.
 
 - **MAJOR** — architectural change (new/removed service, breaking inter-service
   contract, destructive migration).
-- **MINOR** — new feature, endpoint, screen, or channel without breakage.
+- **MINOR** — new feature, endpoint, screen, or channel without breakage. This
+  also covers a user-facing terminology rename that leaves the public
+  contract and schema unchanged — for example **2.2.0**, which renamed
+  «Контрагент» → «Компания» in the UI while the code/DB identifier stayed
+  `asset`. Treat such renames as MINOR, not PATCH.
 - **PATCH** — bug fix or security fix without public-contract change.
 
 Every code change bumps the version in the same commit and adds a `CHANGELOG.md`
-entry. The `scripts/check-version-bump.sh` pre-commit guard enforces this.
+entry. A pre-commit guard for this lives in `scripts/check-version-bump.sh`,
+but it is **opt-in** — install it once with `bash scripts/check-version-bump.sh
+--hook`. It is not wired into CI, so the bump remains your responsibility on
+every code commit.
 
 ---
 

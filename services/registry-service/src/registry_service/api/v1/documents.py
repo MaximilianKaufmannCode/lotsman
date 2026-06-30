@@ -517,8 +517,32 @@ async def get_document(
     clock = get_clock()
     use_case = GetDocumentDetail(doc_repo=doc_repo, attachment_repo=att_repo, clock=clock)
     doc_dto, att_dtos = await use_case.execute(document_id=document_id)
+
+    # Resolve asset_name + type_display_name (parity with the list endpoint) so
+    # every consumer of the detail endpoint — notifications, calendar sync, the
+    # SPA detail view — can show the company and the human document type without
+    # a second call. Both are optional fields on DocumentResponse (default None),
+    # so this only fills them in; it does not change the response contract.
+    from sqlalchemy import select as _select
+
+    from registry_service.db.models import Asset as _AssetModel
+    from registry_service.db.models import DocumentType as _DocumentTypeModel
+
+    d = vars(doc_dto).copy()
+    d["asset_name"] = (
+        await session.execute(
+            _select(_AssetModel.name).where(_AssetModel.id == doc_dto.asset_id)
+        )
+    ).scalar_one_or_none()
+    d["type_display_name"] = (
+        await session.execute(
+            _select(_DocumentTypeModel.display_name).where(
+                _DocumentTypeModel.code == doc_dto.type_code
+            )
+        )
+    ).scalar_one_or_none()
     return {
-        "document": DocumentResponse(**vars(doc_dto)).model_dump(),
+        "document": DocumentResponse(**d).model_dump(),
         "attachments": [AttachmentResponse(**vars(a)).model_dump() for a in att_dtos],
     }
 

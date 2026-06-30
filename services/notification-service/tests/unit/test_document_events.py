@@ -40,6 +40,18 @@ def test_build_title_with_and_without_label() -> None:
     assert de.build_title(de.DOC_UPDATED, None) == "Изменён документ"
 
 
+def test_build_title_includes_company_when_known() -> None:
+    # Company is appended so the recipient can tell which company the document
+    # belongs to (in-app feed, daily digest, event email headline).
+    assert (
+        de.build_title(de.DOC_CREATED, "ДГ-123", "ООО «Ромашка»")
+        == "Создан документ: ДГ-123 · ООО «Ромашка»"
+    )
+    # No company → unchanged; empty company → not appended.
+    assert de.build_title(de.DOC_ASSIGNED, "ДГ-7", None) == "Назначен ответственный: ДГ-7"
+    assert de.build_title(de.DOC_UPDATED, None, "") == "Изменён документ"
+
+
 def test_summarize_fields_dedups_and_labels() -> None:
     s = de.summarize_fields(["expiry_date", "status", "expiry_date"])
     assert s == "срок действия, статус"

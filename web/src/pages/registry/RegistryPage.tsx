@@ -521,7 +521,7 @@ export function RegistryPage() {
           header: effectiveLabel("number", t("registry.col_number")),
           cell: (info) => (
             <span className="font-mono text-xs" data-analytics-key="number">
-              {info.getValue()}
+              {info.getValue() || "—"}
             </span>
           ),
           enableSorting: true,

@@ -32,7 +32,7 @@ import { QuickTypeDialog } from "./QuickTypeDialog";
 const createDocSchema = z.object({
   asset_id: z.string().min(1, "Выберите компанию"),
   type_code: z.string().min(1, "Выберите тип документа"),
-  number: z.string().min(1, "Обязательное поле"),
+  number: z.string().max(500, "Максимум 500 символов").nullable().optional(),
   issue_date: z.string().nullable().optional(),
   expiry_date: z.string().nullable().optional(),
   notes: z.string().max(10000, "Максимум 10 000 символов").nullable().optional(),
@@ -125,7 +125,9 @@ export function DocumentCreateDialog({ open, onClose }: DocumentCreateDialogProp
     await createMutation.mutateAsync({
       asset_id: values.asset_id,
       type_code: values.type_code,
-      number: values.number,
+      // № документа is optional (backend column is nullable) — send null for an
+      // empty/whitespace value so the document is created without a number.
+      number: values.number?.trim() ? values.number.trim() : null,
       issue_date: values.issue_date ?? null,
       expiry_date: values.expiry_date ?? null,
       responsible_user_id: claims?.sub ?? null,
@@ -273,13 +275,9 @@ export function DocumentCreateDialog({ open, onClose }: DocumentCreateDialogProp
             </div>
           )}
 
-          {/* № документа */}
-          <FormField label="№ документа *" error={errors.number?.message}>
-            <Input
-              {...register("number")}
-              placeholder="Например: ДГ-2026-001"
-              aria-required="true"
-            />
+          {/* № документа — optional (issue #18) */}
+          <FormField label="№ документа" error={errors.number?.message}>
+            <Input {...register("number")} placeholder="Например: ДГ-2026-001 (необязательно)" />
           </FormField>
 
           {/* Dates */}

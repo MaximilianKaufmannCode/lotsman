@@ -174,7 +174,8 @@ export interface BulkArchiveResult {
 export interface CreateDocumentPayload {
   asset_id: string;
   type_code: string;
-  number: string;
+  /** № документа is optional (issue #18) — backend column is nullable. */
+  number: string | null;
   issue_date: string | null;
   expiry_date: string | null;
   responsible_user_id: string | null;

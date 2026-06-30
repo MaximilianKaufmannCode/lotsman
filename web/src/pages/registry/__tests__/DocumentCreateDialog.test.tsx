@@ -5,7 +5,8 @@
  * Unit tests for DocumentCreateDialog (US-5, US-7).
  *
  * Business rules under test:
- *  - Submit button is disabled until asset_id, type_code and number are filled
+ *  - Submit button is disabled until asset_id and type_code are filled
+ *    (№ документа is optional — issue #18; blank number submits as null)
  *  - Notes field accepts up to 10 000 chars (schema boundary)
  *  - useCreateDocument.mutate is called with the correct payload on valid submit
  *  - Escape key resets the form and calls onClose
@@ -143,7 +144,9 @@ describe("DocumentCreateDialog — required fields gate", () => {
     });
   });
 
-  it("test_number_field_required_error_shown_when_blank_submitted", async () => {
+  it("test_number_optional_blank_submits_with_null", async () => {
+    // issue #18: № документа is optional. With asset + type filled but number
+    // left blank, the form is valid and submits with number = null.
     const user = userEvent.setup();
     await renderDialog();
 
@@ -151,25 +154,23 @@ describe("DocumentCreateDialog — required fields gate", () => {
       expect(screen.getByRole("combobox", { name: /Компания/i })).toBeTruthy();
     });
 
-    // Fill asset + type but leave number blank
     const assetSelect = screen.getByRole("combobox", { name: /Компания/i });
     const typeSelect = screen.getByRole("combobox", { name: /Тип документа/i });
-
     await user.selectOptions(assetSelect, "a-001");
     await user.selectOptions(typeSelect, "contract");
 
-    // Click submit without filling number
-    const submitBtn = screen.queryByRole("button", { name: /Создать документ/i });
-    if (submitBtn && !submitBtn.hasAttribute("disabled")) {
-      await user.click(submitBtn);
-      await waitFor(() => {
-        // Expect either a field error or that mutate was NOT called
-        expect(mockMutateAsync).not.toHaveBeenCalled();
-      });
-    } else {
-      // Submit already disabled — correct behavior
-      expect(submitBtn?.hasAttribute("disabled") ?? true).toBe(true);
-    }
+    // Submit is enabled even though the number is blank (no required-field gate).
+    const submitBtn = screen.getByRole("button", { name: /Создать документ/i });
+    expect(submitBtn).not.toBeDisabled();
+    await user.click(submitBtn);
+
+    await waitFor(() => {
+      expect(mockMutateAsync).toHaveBeenCalled();
+    });
+    const payload = mockMutateAsync.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(payload?.asset_id).toBe("a-001");
+    expect(payload?.type_code).toBe("contract");
+    expect(payload?.number).toBeNull();
   });
 });
 

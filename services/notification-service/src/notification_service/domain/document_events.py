@@ -76,10 +76,20 @@ def category_title(category: str) -> str:
     return _CATEGORY_TITLES_RU.get(category, "Уведомление")
 
 
-def build_title(category: str, doc_label: str | None) -> str:
-    """e.g. 'Изменён документ: ДГ-123' (or just the base if no label)."""
+def build_title(
+    category: str, doc_label: str | None, company: str | None = None
+) -> str:
+    """e.g. 'Изменён документ: ДГ-123 · ООО «Ромашка»'.
+
+    `company` is appended when known so the recipient can tell which company the
+    document belongs to — in the in-app feed, the daily digest, and the event
+    email headline alike. Falls back to base / 'base: label' when absent.
+    """
     base = category_title(category)
-    return f"{base}: {doc_label}" if doc_label else base
+    title = f"{base}: {doc_label}" if doc_label else base
+    if company:
+        title = f"{title} · {company}"
+    return title
 
 
 def summarize_fields(fields: list[str]) -> str:

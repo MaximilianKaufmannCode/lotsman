@@ -230,7 +230,7 @@ class EventNotifier:
         except Exception:
             doc_label = None
 
-        title = de.build_title(category, doc_label)
+        title = de.build_title(category, doc_label, company)
         body = de.build_body(category, fields=fields)
         doc_url = f"{self.web_bff_base_url}/registry?document_id={document_id}"
         settings_url = f"{self.web_bff_base_url}/profile"

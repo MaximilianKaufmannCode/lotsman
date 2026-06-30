@@ -2,8 +2,10 @@
 // Copyright (c) 2026 Maximilian Kaufmann. See LICENSE (Business Source License 1.1).
 
 /**
- * AssetsPage — admin-only (RoleGuard) management of partner companies.
- * US-12..US-15: list, create, edit, archive assets.
+ * AssetsPage — management of partner companies (Компании).
+ * Editors and admins can list + create; editing and archiving are admin-only
+ * (the «Действия» column is hidden for non-admins, mirroring the backend RBAC:
+ * POST /assets = editor+admin, PATCH/archive = admin). US-12..US-15.
  */
 
 import {
@@ -16,6 +18,7 @@ import { format, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
 import { Archive, Pencil, Plus, RefreshCw } from "lucide-react";
 import * as React from "react";
+import { useAuth } from "@/features/auth/AuthProvider";
 import {
   useArchiveAsset,
   useAssets,
@@ -44,6 +47,9 @@ export function AssetsPage() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [q]);
+
+  const { claims } = useAuth();
+  const isAdmin = claims?.role === "admin";
 
   const { data, isLoading, isError, refetch } = useAssets(debouncedQ ? { q: debouncedQ } : {});
   const createMutation = useCreateAsset();
@@ -84,32 +90,38 @@ export function AssetsPage() {
           </span>
         ),
       }),
-      columnHelper.display({
-        id: "actions",
-        header: "Действия",
-        cell: ({ row }) => (
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setEditAsset(row.original)}
-              aria-label={`Редактировать ${row.original.name}`}
-              className="rounded p-1.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <Pencil className="size-4" aria-hidden />
-            </button>
-            <button
-              type="button"
-              onClick={() => setArchiveAsset(row.original)}
-              aria-label={`Архивировать ${row.original.name}`}
-              className="rounded p-1.5 text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <Archive className="size-4" aria-hidden />
-            </button>
-          </div>
-        ),
-      }),
+      // Edit + archive are admin-only — hide the «Действия» column for editors,
+      // who can create + view companies but not mutate existing ones.
+      ...(isAdmin
+        ? [
+            columnHelper.display({
+              id: "actions",
+              header: "Действия",
+              cell: ({ row }) => (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setEditAsset(row.original)}
+                    aria-label={`Редактировать ${row.original.name}`}
+                    className="rounded p-1.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Pencil className="size-4" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setArchiveAsset(row.original)}
+                    aria-label={`Архивировать ${row.original.name}`}
+                    className="rounded p-1.5 text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Archive className="size-4" aria-hidden />
+                  </button>
+                </div>
+              ),
+            }),
+          ]
+        : []),
     ],
-    [],
+    [isAdmin],
   );
 
   const table = useReactTable({

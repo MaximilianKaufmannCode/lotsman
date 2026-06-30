@@ -9,9 +9,8 @@
  * navigating to /admin/users gets a 403 from the API, not a confusing redirect.
  *
  * Usage:
- *   <RoleGuard role="admin">
- *     <AdminUsersPage />
- *   </RoleGuard>
+ *   <RoleGuard role="admin">…</RoleGuard>
+ *   <RoleGuard role={["admin", "editor"]}>…</RoleGuard>
  */
 
 import type * as React from "react";
@@ -19,7 +18,8 @@ import { useAuth } from "./AuthProvider";
 import type { UserRole } from "./types";
 
 interface RoleGuardProps {
-  role: UserRole;
+  /** A single allowed role, or any-of a list of allowed roles. */
+  role: UserRole | UserRole[];
   children: React.ReactNode;
   /** Optional fallback rendered when role does not match */
   fallback?: React.ReactNode;
@@ -29,7 +29,8 @@ export function RoleGuard({ role, children, fallback = null }: RoleGuardProps) {
   const { claims } = useAuth();
 
   if (!claims) return null;
-  if (claims.role !== role) return <>{fallback}</>;
+  const allowed = Array.isArray(role) ? role : [role];
+  if (!allowed.includes(claims.role)) return <>{fallback}</>;
 
   return <>{children}</>;
 }

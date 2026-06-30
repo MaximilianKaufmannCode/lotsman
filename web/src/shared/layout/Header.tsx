@@ -3,8 +3,10 @@
 
 import { Link } from "@tanstack/react-router";
 import {
+  Building2,
   Calendar,
   ChevronDown,
+  ClipboardList,
   Compass,
   LogOut,
   Radio,
@@ -150,6 +152,32 @@ function UserMenu() {
             </span>
           </div>
 
+          {/* Registry — primary workspace, available to all roles */}
+          {!isSuperAdmin && (
+            <Link
+              to="/registry"
+              search={{
+                q: undefined,
+                type_code: undefined,
+                status: undefined,
+                asset_id: undefined,
+                show_archived: undefined,
+                sort: undefined,
+                dir: undefined,
+                page: undefined,
+              }}
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className={cn(
+                "flex w-full items-center gap-2 px-3 py-2 text-sm",
+                "hover:bg-accent focus-visible:outline-none focus-visible:bg-accent",
+              )}
+            >
+              <ClipboardList className="h-4 w-4" aria-hidden />
+              {t("nav.registry")}
+            </Link>
+          )}
+
           {/* Profile link */}
           <Link
             to="/profile"
@@ -163,6 +191,22 @@ function UserMenu() {
             <User className="h-4 w-4" aria-hidden />
             {t("nav.profile")}
           </Link>
+
+          {/* Companies — editors and admins manage companies (create + view) */}
+          {(claims.role === "admin" || claims.role === "editor") && (
+            <Link
+              to="/admin/assets"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className={cn(
+                "flex w-full items-center gap-2 px-3 py-2 text-sm",
+                "hover:bg-accent focus-visible:outline-none focus-visible:bg-accent",
+              )}
+            >
+              <Building2 className="h-4 w-4" aria-hidden />
+              {t("nav.admin_assets")}
+            </Link>
+          )}
 
           {/* Admin links — admin only (NOT super_admin) */}
           {claims.role === "admin" && (
@@ -178,18 +222,6 @@ function UserMenu() {
               >
                 <Shield className="h-4 w-4" aria-hidden />
                 {t("nav.admin_users")}
-              </Link>
-              <Link
-                to="/admin/assets"
-                role="menuitem"
-                onClick={() => setOpen(false)}
-                className={cn(
-                  "flex w-full items-center gap-2 px-3 py-2 text-sm",
-                  "hover:bg-accent focus-visible:outline-none focus-visible:bg-accent",
-                )}
-              >
-                <Shield className="h-4 w-4" aria-hidden />
-                {t("nav.admin_assets")}
               </Link>
               <Link
                 to="/admin/document-types"

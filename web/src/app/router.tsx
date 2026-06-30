@@ -182,8 +182,10 @@ function GuardedAdminUsers() {
 function GuardedAdminAssets() {
   return (
     <AuthGuard>
-      {/* biome-ignore lint/a11y/useValidAriaRole: role is a RoleGuard custom prop, not an HTML attribute */}
-      <RoleGuard role="admin" fallback={adminFallback}>
+      {/* Companies are managed by editors too (create + view); the page itself
+          gates edit/archive to admins. biome-ignore lint/a11y/useValidAriaRole:
+          role is a RoleGuard custom prop, not an HTML attribute */}
+      <RoleGuard role={["admin", "editor"]} fallback={adminFallback}>
         <AssetsPage />
       </RoleGuard>
     </AuthGuard>

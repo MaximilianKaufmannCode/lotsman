@@ -115,6 +115,9 @@ import { ImportXlsxDialog } from "./ImportXlsxDialog";
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const COLUMN_VISIBILITY_STORAGE_KEY_PREFIX = "lotsman_column_visibility_";
+// Personal column ORDER override (issue #16) — like visibility, the arrangement
+// is per-user (localStorage). The tenant-wide admin order is the default seed.
+const COLUMN_ORDER_STORAGE_KEY_PREFIX = "lotsman_column_order_";
 // Base row height at font-scale 100 (the historical fixed value). The effective
 // height is derived from the user's font scale so rows grow with the text
 // instead of clipping/mis-centering it (see deriveRowHeight + useFontScale).
@@ -221,6 +224,38 @@ export function RegistryPage() {
       }
     },
     [storageKey],
+  );
+
+  // ── Personal column order (localStorage per user — issue #16) ───────────────
+  // Reordering columns is a personal view preference: every role arranges their
+  // own columns. The admin's tenant-wide order (server) is the default seed used
+  // when a user has no personal order.
+  const orderStorageKey = `${COLUMN_ORDER_STORAGE_KEY_PREFIX}${userId}`;
+  const [personalColumnOrder, setPersonalColumnOrder] = React.useState<string[] | null>(() => {
+    try {
+      const stored = localStorage.getItem(orderStorageKey);
+      if (stored) {
+        const parsed = JSON.parse(stored) as unknown;
+        if (Array.isArray(parsed) && parsed.every((x) => typeof x === "string")) {
+          return parsed as string[];
+        }
+      }
+    } catch {
+      // localStorage blocked / parse failed — fall back to the tenant-wide order
+    }
+    return null;
+  });
+  const persistPersonalColumnOrder = React.useCallback(
+    (next: string[] | null) => {
+      setPersonalColumnOrder(next);
+      try {
+        if (next === null) localStorage.removeItem(orderStorageKey);
+        else localStorage.setItem(orderStorageKey, JSON.stringify(next));
+      } catch {
+        // private browsing — no crash
+      }
+    },
+    [orderStorageKey],
   );
 
   // ── Tenant-wide column order (US-N) ────────────────────────────────────────
@@ -577,7 +612,9 @@ export function RegistryPage() {
   // second (pin-left invariant — sticky positioning depends on this).
   const effectiveColumnOrder = React.useMemo<ColumnOrderState>(() => {
     const knownColIds = new Set<string>(columns.map((c) => c.id ?? "").filter(Boolean));
-    const stored = (columnOrderResp?.order ?? []).filter((id) => knownColIds.has(id));
+    // Personal order (this user) wins; the tenant-wide admin order is the seed.
+    const source = personalColumnOrder ?? columnOrderResp?.order ?? [];
+    const stored = source.filter((id) => knownColIds.has(id));
     const fallback = stored.length > 0 ? stored : DEFAULT_COLUMN_ORDER;
     const seen = new Set<string>(fallback);
     const tail = Array.from(knownColIds).filter((id) => !seen.has(id));
@@ -590,7 +627,7 @@ export function RegistryPage() {
       merged.splice(1, 0, effectivePinnedId);
     }
     return merged;
-  }, [columnOrderResp, columns, effectivePinnedId]);
+  }, [personalColumnOrder, columnOrderResp, columns, effectivePinnedId]);
 
   // ── Table instance ─────────────────────────────────────────────────────────
   const table = useReactTable({
@@ -963,6 +1000,9 @@ export function RegistryPage() {
                       order: [...DEFAULT_COLUMN_ORDER],
                       pinned_column_id: "asset_name",
                     });
+                  } else {
+                    // Drop this user's personal order → fall back to the default.
+                    persistPersonalColumnOrder(null);
                   }
                 }}
                 onShowAll={() => {
@@ -975,14 +1015,21 @@ export function RegistryPage() {
                   }
                   persistColumnVisibility(all);
                 }}
-                canReorder={isAdmin}
+                canReorder={true}
+                canManageLayout={isAdmin}
                 pinnedColumnId={effectivePinnedId}
-                onReorder={(nextOrder) =>
-                  updateColumnOrder.mutate({
-                    order: nextOrder,
-                    pinned_column_id: effectivePinnedId,
-                  })
-                }
+                onReorder={(nextOrder) => {
+                  if (isAdmin) {
+                    // Admin reorder sets the tenant-wide default for everyone.
+                    updateColumnOrder.mutate({
+                      order: nextOrder,
+                      pinned_column_id: effectivePinnedId,
+                    });
+                  } else {
+                    // Editors/viewers arrange their own view (personal, localStorage).
+                    persistPersonalColumnOrder(nextOrder);
+                  }
+                }}
                 onEditColumn={
                   isAdmin
                     ? (colId) => {
@@ -1600,6 +1647,7 @@ function ColumnVisibilityPanel({
   onReset,
   onShowAll,
   canReorder,
+  canManageLayout,
   pinnedColumnId,
   onReorder,
   onChangePinned,
@@ -1612,8 +1660,12 @@ function ColumnVisibilityPanel({
   /** Show every column (including custom-field cf_* ones) — useful right
    * after an import when the user wants the registry to mirror the xlsx. */
   onShowAll: () => void;
-  /** True for admin role — gates reorder gestures and arrow buttons. */
+  /** Gates reorder gestures (drag handle + ↑/↓). Available to every role —
+   * reordering is a personal view preference (issue #16). */
   canReorder: boolean;
+  /** Gates tenant-wide layout controls (pin column, rename column) — admin
+   * only, since these change the shared default for everyone. */
+  canManageLayout: boolean;
   /** Currently pinned (sticky-left) column id. */
   pinnedColumnId: string;
   /** Called with the new full column order (incl. `select`) when the user
@@ -1747,6 +1799,7 @@ function ColumnVisibilityPanel({
                 index={idx}
                 lastIndex={visibleColumns.length - 1}
                 canReorder={canReorder}
+                canManageLayout={canManageLayout}
                 pinnedColumnId={pinnedColumnId}
                 onPin={() => onChangePinned(col.id)}
                 onMoveUp={() => {
@@ -1794,6 +1847,7 @@ function SortableColumnRow({
   index,
   lastIndex,
   canReorder,
+  canManageLayout,
   pinnedColumnId,
   onPin,
   onMoveUp,
@@ -1804,6 +1858,7 @@ function SortableColumnRow({
   index: number;
   lastIndex: number;
   canReorder: boolean;
+  canManageLayout: boolean;
   pinnedColumnId: string;
   onPin: () => void;
   onMoveUp: () => void;
@@ -1890,7 +1945,7 @@ function SortableColumnRow({
       </label>
       {canReorder && (
         <span className="flex shrink-0 items-center">
-          {onEdit && (
+          {canManageLayout && onEdit && (
             <button
               type="button"
               onClick={onEdit}
@@ -1901,7 +1956,7 @@ function SortableColumnRow({
               <Pencil className="size-3.5" aria-hidden />
             </button>
           )}
-          {!isPinned && (
+          {canManageLayout && !isPinned && (
             <button
               type="button"
               onClick={onPin}
